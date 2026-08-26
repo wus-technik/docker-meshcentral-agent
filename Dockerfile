@@ -2,9 +2,12 @@
 # from the MeshCentral server at first start, so the base only needs a way to
 # download that installer and validate its TLS certificate.
 #
-# There is nothing to compile, and every package below is needed at runtime
-# rather than build time, so a multi-stage build would have nothing to discard
-# and would not make the image smaller.
+# Multi-stage would not help, and this was measured rather than assumed
+# (2026-08-26, amd64): debian:trixie-slim is 75.0 MB, this image 98.6 MB. A
+# multi-stage variant copying only wget, curl and their libraries came out at
+# 93.4 MB, but neither binary could start — transitive libraries were missing.
+# Copying enough to fix that re-adds the same packages, for no saving and a
+# fragile, arch-specific COPY step.
 FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.title="MeshCentral Agent for Docker" \

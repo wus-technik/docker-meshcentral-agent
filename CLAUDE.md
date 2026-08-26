@@ -49,9 +49,12 @@ and fails the build before anything is pushed, so run it locally after editing.
 
 Two things about the Dockerfile that look like oversights but are not:
 
-- **Multi-stage would not help.** Nothing is compiled, and `wget`, `curl` and `ca-certificates`
-  are all needed at *runtime* (the agent is downloaded on first start), so a final stage would
-  reinstall exactly what a builder stage held. There is nothing to discard.
+- **Multi-stage would not help**, measured on CI (2026-08-26, amd64): base `debian:trixie-slim`
+  75.0 MB, this image 98.6 MB, and a multi-stage variant copying only the binaries and their
+  libraries 93.4 MB — with both `wget` and `curl` failing to start for want of transitive
+  libraries. Nothing is compiled here and all three packages are runtime dependencies of the
+  first-start install, so a builder stage has nothing to discard. Do not re-open this without
+  new evidence.
 - **`curl` is not redundant with `wget`.** MeshCentral's `meshinstall-linux.sh` downloads with
   `wget … || curl …`; curl is its fallback path. Removing it breaks installs whenever wget fails.
 
