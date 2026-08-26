@@ -13,7 +13,7 @@ first start, straight from your own server, and keeps the installation in a volu
 [![License: MIT](https://img.shields.io/github/license/wus-technik/docker-meshcentral-agent?style=flat-square&color=blue)](LICENSE)
 ![Debian](https://img.shields.io/badge/base-debian_13_trixie--slim-A81D33?style=flat-square&logo=debian&logoColor=white)
 ![Agent](https://img.shields.io/badge/agent-fetched_at_first_start-lightgrey?style=flat-square)
-![Tags](https://img.shields.io/badge/tags-latest_%2B_YYYYMMDD-informational?style=flat-square)
+![Tags](https://img.shields.io/badge/tags-stable_%2B_latest-informational?style=flat-square)
 
 </div>
 
@@ -35,7 +35,7 @@ comes straight back up on every restart.
 | 🐧 **Small base** | `debian:trixie-slim` (Debian 13) plus `wget`, `curl` and `ca-certificates` — nothing else |
 | 🔁 **Clean signals** | The agent is `exec`'d as PID 1, so `docker stop` reaches it directly |
 | 🩹 **Fails loudly** | A bad URL, a bad group ID or an installer that produces no binary each stop the container with a message naming the cause |
-| 🏷️ **Dated tags** | Every published build moves `:latest` and adds a `:YYYYMMDD` tag, so any earlier image stays reachable |
+| 🏷️ **Two tracks** | `:stable` is cut from a git tag on `main`; `:latest` follows the newest branch build. Both leave an immutable tag behind |
 
 ## Install
 
@@ -55,6 +55,10 @@ services:
       MESH_SERVER_URL: "https://your-meshcentral-server.com"
       MESH_GROUP_ID: "your-super-long-group-id"
 ```
+
+> [!TIP]
+> `:latest` follows every branch build. For a deployment you want `:stable`, which only moves when
+> a release is tagged on `main` — or a `:YYYYMMDD` tag to pin one exact image.
 
 > [!IMPORTANT]
 > Group IDs contain `$` characters. Compose reads a single `$` as variable interpolation, so
@@ -110,12 +114,20 @@ There is no test suite — the image is a base, a script and a workflow. `entryp
 `sh` rather than bash; CI runs `shellcheck --shell=sh entrypoint.sh` on every push and pull
 request, so keep constructs portable.
 
-Pull requests build the image without publishing it. Every push that does publish tags the image
-both `:latest` and `:YYYYMMDD` — so `:latest` always follows the newest build, and the dated tags
-are how you pin or roll back:
+Publishing has two tracks:
+
+| Trigger | Tags published | Meaning |
+|---|---|---|
+| Git tag on `main` | `:YYYYMMDD` and `:stable` | The release path — `:stable` is what deployments should follow |
+| Push to any branch | `:sha-<commit>` and `:latest` | The moving edge; `:latest` is whatever built most recently |
+| Pull request, or a tag not on `main` | *(none — build only)* | Proves the image still builds without touching the registry |
+
+Each track leaves an immutable tag behind (`:YYYYMMDD`, `:sha-…`), so pinning and rolling back
+never depend on a moving tag:
 
 ```sh
-docker pull ghcr.io/wus-technik/docker-meshcentral-agent:20260826
+docker pull ghcr.io/wus-technik/docker-meshcentral-agent:stable      # follow releases
+docker pull ghcr.io/wus-technik/docker-meshcentral-agent:20260826    # pin to one release
 ```
 
 </details>
@@ -124,7 +136,7 @@ docker pull ghcr.io/wus-technik/docker-meshcentral-agent:20260826
 
 - **v1** — first release of the rebuilt image: Debian 13 (trixie) base, install-on-first-start
   entrypoint with explicit failure messages, a `docker-compose.sample.yml` to copy, MIT licence,
-  and a build that lints the script before publishing `:latest` and `:YYYYMMDD`.
+  and a build that lints the script before publishing.
 
 ---
 

@@ -57,9 +57,21 @@ Two things about the Dockerfile that look like oversights but are not:
 
 ## Publishing
 
-Pull requests build without pushing. Every push that publishes tags the image both `:latest` and
-`:YYYYMMDD`, so `:latest` follows the newest build and the dated tags are the pin/rollback path.
-Note this is deliberate and branch-independent: a push to any listed branch moves `:latest`.
+The workflow's `Resolve image tags` step decides both the tags and whether to push at all:
+
+| Event | Tags | Pushed |
+|---|---|---|
+| Git tag whose commit is an ancestor of `origin/main` | `:YYYYMMDD`, `:stable` | yes |
+| Push to any branch | `:sha-<12>`, `:latest` | yes |
+| Pull request | `:pr-<n>` | no |
+| Git tag *not* on `main` | `:<tag name>` | no, plus a `::warning::` |
+
+Two things that step depends on: `fetch-depth: 0` on the checkout (the ancestry test needs real
+history), and the multi-line `$GITHUB_OUTPUT` heredoc for `tags`. `:stable` must stay reachable
+only from the tag-on-main path — that is the whole point of the split.
+
+Every action is on a major that runs on **Node 24**, the runner default. Do not pin any back to a
+Node 20 major; the runner warns and will eventually refuse.
 
 Base image: `trixie` is Debian 13, current stable. Check
 [docker-library/official-images](https://github.com/docker-library/official-images/blob/master/library/debian)

@@ -3,8 +3,9 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - main
-      - v1
+      - '**'
+    tags:
+      - '**'
   pull_request:
   workflow_dispatch:  # Allows manual triggering
 
@@ -18,27 +19,63 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Every action here is on a major that runs on Node 24, the runner's
+      # default. Do not pin any of them back to a Node 20 major.
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # Needed to tell whether a tag sits on main
 
       - name: Lint entrypoint.sh
         run: shellcheck --shell=sh entrypoint.sh
 
-      # Pull requests build to prove the Dockerfile still works, but publish
-      # nothing — only pushes to a branch produce an image in the registry.
+      # Two publishing shapes:
+      #   a tag on main -> :YYYYMMDD + :stable   (the release path)
+      #   any branch    -> :sha-<commit> + :latest
+      # Pull requests, and tags that are not on main, build without publishing.
+      - name: Resolve image tags
+        id: tags
+        run: |
+          set -eu
+          image="ghcr.io/${GITHUB_REPOSITORY}"
+          publish=false
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            tags="${image}:pr-${{ github.event.pull_request.number }}"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main || true
+            if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main 2>/dev/null; then
+              publish=true
+              tags="${image}:$(date +'%Y%m%d')
+          ${image}:stable"
+            else
+              echo "::warning::Tag ${GITHUB_REF_NAME} is not on main — building it, but publishing nothing."
+              tags="${image}:${GITHUB_REF_NAME}"
+            fi
+          else
+            publish=true
+            tags="${image}:sha-$(git rev-parse --short=12 "$GITHUB_SHA")
+          ${image}:latest"
+          fi
+
+          {
+            echo "publish=${publish}"
+            echo "tags<<TAGS_EOF"
+            echo "$tags"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "publish=${publish}"
+          echo "$tags"
+
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
+        if: steps.tags.outputs.publish == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate date tag
-        run: echo "DATE_TAG=$(date +'%Y%m%d')" >> "$GITHUB_ENV"
-
-      # Every published build moves :latest and adds a dated :YYYYMMDD tag, so
-      # the date tags are the way back to any earlier image.
       # build-push-action needs the docker-container driver for the GitHub
       # Actions cache; the default docker driver cannot export it.
       - name: Set up Buildx
@@ -49,9 +86,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ env.DATE_TAG }}
+          push: ${{ steps.tags.outputs.publish == 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
