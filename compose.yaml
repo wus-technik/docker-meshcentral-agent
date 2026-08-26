@@ -1,0 +1,13 @@
+# Copy this file, fill in the two values, and `docker compose up -d`.
+services:
+  meshcentral-agent:
+    container_name: meshcentral-agent
+    image: ghcr.io/wus-technik/docker-meshcentral-agent:latest
+    restart: unless-stopped
+    volumes:
+      - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
+    environment:
+      MESH_SERVER_URL: "https://your-meshcentral-server.com"
+      # Group IDs contain $ characters. Compose reads a single $ as variable
+      # interpolation, so write every one of them twice: $$
+      MESH_GROUP_ID: "your-super-long-group-id"

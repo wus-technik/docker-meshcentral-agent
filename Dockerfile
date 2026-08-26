@@ -1,0 +1,25 @@
+# The MeshCentral agent is not baked into this image: entrypoint.sh fetches it
+# from the MeshCentral server at first start, so the base only needs a way to
+# download that installer and validate its TLS certificate.
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="MeshCentral Agent for Docker" \
+      org.opencontainers.image.description="Runs a MeshCentral agent in a container, installed from your own server on first start." \
+      org.opencontainers.image.source="https://github.com/wus-technik/docker-meshcentral-agent" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# The agent installs into, and runs from, this directory. Mount a volume here
+# to keep the installation across container restarts.
+WORKDIR /meshagent
+VOLUME ["/meshagent"]
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
