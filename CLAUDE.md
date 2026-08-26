@@ -80,10 +80,11 @@ Base image: `trixie` is Debian 13, current stable. Check
 [docker-library/official-images](https://github.com/docker-library/official-images/blob/master/library/debian)
 before bumping — the tag carrying `latest` there is the current stable.
 
-## Branch layout
+## History
 
-`v1` is an orphan branch: a clean rebuild with no shared history with `main`. Do not try to merge
-or rebase across the two.
+`main` was rebuilt from scratch as an orphan branch and force-pushed over the original history, so
+it shares no ancestry with the repository's first commits. Nothing predating that rebuild is
+reachable from a branch.
 
 ## Documentation contract
 
