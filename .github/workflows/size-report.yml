@@ -51,12 +51,9 @@ jobs:
       - name: Report
         run: |
           echo "=== SIZES ==="
-          docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' \
-            debian:trixie-slim mca:single mca:multi
-          echo
-          echo "=== BYTES ==="
           for i in debian:trixie-slim mca:single mca:multi; do
-            printf '%-22s %s\n' "$i" "$(docker image inspect -f '{{.Size}}' "$i")"
+            bytes=$(docker image inspect -f '{{.Size}}' "$i")
+            printf '%-22s %12s bytes  %8.1f MB\n' "$i" "$bytes" "$(echo "$bytes" | awk '{print $1/1048576}')"
           done
           echo
           echo "=== DOES THE MULTI-STAGE VARIANT STILL WORK? ==="
