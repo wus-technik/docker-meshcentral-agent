@@ -27,14 +27,17 @@ jobs:
                   ca-certificates curl wget \
               && rm -rf /var/lib/apt/lists/*
           # Keep only the binaries, their shared libraries and the CA bundle.
+          # realpath matters: ldd reports /lib/..., but /lib is a symlink to
+          # /usr/lib in Debian, and copying a real /lib dir over that symlink
+          # fails at COPY time.
           RUN set -eux; mkdir -p /out; \
               for b in /usr/bin/wget /usr/bin/curl; do \
-                cp --parents "$b" /out; \
-                ldd "$b" | awk '/=> \//{print $3}' | sort -u \
-                  | while read -r l; do cp --parents "$l" /out; done; \
+                cp -a --parents "$b" /out; \
+                ldd "$b" | awk '/=> \//{print $3} /^\t\//{print $1}' | sort -u \
+                  | while read -r l; do cp -a --parents "$(realpath "$l")" /out; done; \
               done; \
-              cp --parents -r /etc/ssl/certs /out; \
-              cp --parents -r /usr/share/ca-certificates /out
+              cp -a --parents /etc/ssl/certs /out; \
+              cp -a --parents /usr/share/ca-certificates /out
 
           FROM debian:trixie-slim
           COPY --from=builder /out /
