@@ -9,7 +9,11 @@ FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.title="MeshCentral Agent for Docker" \
       org.opencontainers.image.description="Runs a MeshCentral agent in a container, installed from your own server on first start." \
+      org.opencontainers.image.vendor="W&S Technik GmbH" \
+      org.opencontainers.image.authors="W&S Technik GmbH" \
+      org.opencontainers.image.url="https://github.com/wus-technik/docker-meshcentral-agent" \
       org.opencontainers.image.source="https://github.com/wus-technik/docker-meshcentral-agent" \
+      org.opencontainers.image.documentation="https://github.com/wus-technik/docker-meshcentral-agent/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT"
 
 # MeshCentral's installer downloads with `wget ... || curl ...`, so both are

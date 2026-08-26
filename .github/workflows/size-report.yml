@@ -1,0 +1,61 @@
+# Temporary: measures whether a multi-stage build shrinks this image.
+# Delete once the question is answered.
+name: Image size report
+
+on:
+  workflow_dispatch:
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build single-stage (current Dockerfile)
+        run: |
+          docker pull -q debian:trixie-slim
+          docker build -q -t mca:single . > /dev/null
+
+      - name: Build multi-stage variant
+        run: |
+          cat > Dockerfile.multi <<'EOF'
+          FROM debian:trixie-slim AS builder
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                  ca-certificates curl wget \
+              && rm -rf /var/lib/apt/lists/*
+          # Keep only the binaries, their shared libraries and the CA bundle.
+          RUN set -eux; mkdir -p /out; \
+              for b in /usr/bin/wget /usr/bin/curl; do \
+                cp --parents "$b" /out; \
+                ldd "$b" | awk '/=> \//{print $3}' | sort -u \
+                  | while read -r l; do cp --parents "$l" /out; done; \
+              done; \
+              cp --parents -r /etc/ssl/certs /out; \
+              cp --parents -r /usr/share/ca-certificates /out
+
+          FROM debian:trixie-slim
+          COPY --from=builder /out /
+          WORKDIR /meshagent
+          COPY entrypoint.sh /entrypoint.sh
+          RUN chmod +x /entrypoint.sh
+          ENTRYPOINT ["/entrypoint.sh"]
+          EOF
+          docker build -q -f Dockerfile.multi -t mca:multi . > /dev/null
+
+      - name: Report
+        run: |
+          echo "=== SIZES ==="
+          docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' \
+            debian:trixie-slim mca:single mca:multi
+          echo
+          echo "=== BYTES ==="
+          for i in debian:trixie-slim mca:single mca:multi; do
+            printf '%-22s %s\n' "$i" "$(docker image inspect -f '{{.Size}}' "$i")"
+          done
+          echo
+          echo "=== DOES THE MULTI-STAGE VARIANT STILL WORK? ==="
+          docker run --rm --entrypoint wget mca:multi --version | head -1 || echo "wget BROKEN"
+          docker run --rm --entrypoint curl mca:multi --version | head -1 || echo "curl BROKEN"
+          echo
+          echo "=== LABELS ON THE REAL IMAGE ==="
+          docker image inspect -f '{{json .Config.Labels}}' mca:single | tr ',' '\n'
