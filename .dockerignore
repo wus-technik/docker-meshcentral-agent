@@ -2,5 +2,5 @@
 .github
 *.md
 LICENSE
-compose.yaml
+docker-compose.sample.yml
 meshagent-data

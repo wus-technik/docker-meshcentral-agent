@@ -10,10 +10,10 @@ first start, straight from your own server, and keeps the installation in a volu
 [![Build](https://img.shields.io/github/actions/workflow/status/wus-technik/docker-meshcentral-agent/docker-build.yml?branch=v1&style=for-the-badge&label=build&logo=github)](https://github.com/wus-technik/docker-meshcentral-agent/actions/workflows/docker-build.yml)
 [![GHCR](https://img.shields.io/badge/ghcr.io-docker--meshcentral--agent-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://github.com/wus-technik/docker-meshcentral-agent/pkgs/container/docker-meshcentral-agent)
 
-[![License: Apache 2.0](https://img.shields.io/github/license/wus-technik/docker-meshcentral-agent?style=flat-square&color=blue)](LICENSE)
-![Debian](https://img.shields.io/badge/base-debian_bookworm--slim-A81D33?style=flat-square&logo=debian&logoColor=white)
+[![License: MIT](https://img.shields.io/github/license/wus-technik/docker-meshcentral-agent?style=flat-square&color=blue)](LICENSE)
+![Debian](https://img.shields.io/badge/base-debian_13_trixie--slim-A81D33?style=flat-square&logo=debian&logoColor=white)
 ![Agent](https://img.shields.io/badge/agent-fetched_at_first_start-lightgrey?style=flat-square)
-![Config](https://img.shields.io/badge/config-2_variables-informational?style=flat-square)
+![Tags](https://img.shields.io/badge/tags-latest_%2B_YYYYMMDD-informational?style=flat-square)
 
 </div>
 
@@ -32,14 +32,16 @@ comes straight back up on every restart.
 | 📦 **Nothing baked in** | The agent comes from **your** server's own installer, so it always matches the server it reports to |
 | 💾 **One volume** | `/meshagent` holds the installation — later starts find it and skip the download entirely |
 | 🧾 **Two variables** | `MESH_SERVER_URL` and `MESH_GROUP_ID`; the container refuses to start without both, rather than half-installing |
-| 🐧 **Small base** | `debian:bookworm-slim` plus `wget`, `curl` and `ca-certificates` — nothing else |
+| 🐧 **Small base** | `debian:trixie-slim` (Debian 13) plus `wget`, `curl` and `ca-certificates` — nothing else |
 | 🔁 **Clean signals** | The agent is `exec`'d as PID 1, so `docker stop` reaches it directly |
 | 🩹 **Fails loudly** | A bad URL, a bad group ID or an installer that produces no binary each stop the container with a message naming the cause |
+| 🏷️ **Dated tags** | Every published build moves `:latest` and adds a `:YYYYMMDD` tag, so any earlier image stays reachable |
 
 ## Install
 
 Pull from the [GitHub Container Registry](https://github.com/wus-technik/docker-meshcentral-agent/pkgs/container/docker-meshcentral-agent)
-with a very simple compose file — [`compose.yaml`](compose.yaml) in this repository is ready to copy:
+with a very simple compose file — [`docker-compose.sample.yml`](docker-compose.sample.yml) in this
+repository is ready to copy:
 
 ``` yaml
 services:
@@ -108,23 +110,27 @@ There is no test suite — the image is a base, a script and a workflow. `entryp
 `sh` rather than bash; CI runs `shellcheck --shell=sh entrypoint.sh` on every push and pull
 request, so keep constructs portable.
 
-Pull requests build the image without publishing it. Pushes to the default branch publish `latest`
-and a `YYYYMMDD` tag to GHCR; any other branch publishes under its own name, so a branch build can
-never overwrite `latest`.
+Pull requests build the image without publishing it. Every push that does publish tags the image
+both `:latest` and `:YYYYMMDD` — so `:latest` always follows the newest build, and the dated tags
+are how you pin or roll back:
+
+```sh
+docker pull ghcr.io/wus-technik/docker-meshcentral-agent:20260826
+```
 
 </details>
 
 ## Versions
 
-- **v1** — first release of the rebuilt image: install-on-first-start entrypoint with explicit
-  failure messages, `compose.yaml` example, and a build that lints the script and keeps branch
-  images off the `latest` tag.
+- **v1** — first release of the rebuilt image: Debian 13 (trixie) base, install-on-first-start
+  entrypoint with explicit failure messages, a `docker-compose.sample.yml` to copy, MIT licence,
+  and a build that lints the script before publishing `:latest` and `:YYYYMMDD`.
 
 ---
 
 ## License
 
-[Apache 2.0](LICENSE) © W&S Technik GmbH
+[MIT](LICENSE) © 2026 W&S Technik GmbH
 
 <div align="center">
 <sub>Not affiliated with MeshCentral. The agent itself is downloaded from your own server and carries its own licence.</sub>

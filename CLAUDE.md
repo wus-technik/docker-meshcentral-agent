@@ -7,10 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A single-purpose Docker image that runs a [MeshCentral](https://meshcentral.com/) agent in a
 container. There is no application source code; the deliverable is:
 
-- `Dockerfile` — `debian:bookworm-slim` plus `wget`/`curl`/`ca-certificates`, `WORKDIR /meshagent`,
+- `Dockerfile` — `debian:trixie-slim` plus `wget`/`curl`/`ca-certificates`, `WORKDIR /meshagent`,
   `entrypoint.sh` as ENTRYPOINT.
 - `entrypoint.sh` — the entire runtime logic (see below).
-- `compose.yaml` — the example deployment users copy; it and the README's snippet must stay in sync.
+- `docker-compose.sample.yml` — the example deployment users copy; it and the README's snippet must
+  stay in sync.
 - `.github/workflows/docker-build.yml` — shellcheck, then build and push to GHCR.
 
 ## Runtime behaviour (entrypoint.sh)
@@ -44,12 +45,25 @@ docker run --rm -v ./meshagent-data:/meshagent \
 `entrypoint.sh` is `#!/bin/sh` (POSIX, not bash) — CI runs `shellcheck --shell=sh entrypoint.sh`
 and fails the build before anything is pushed, so run it locally after editing.
 
+## Image composition
+
+Two things about the Dockerfile that look like oversights but are not:
+
+- **Multi-stage would not help.** Nothing is compiled, and `wget`, `curl` and `ca-certificates`
+  are all needed at *runtime* (the agent is downloaded on first start), so a final stage would
+  reinstall exactly what a builder stage held. There is nothing to discard.
+- **`curl` is not redundant with `wget`.** MeshCentral's `meshinstall-linux.sh` downloads with
+  `wget … || curl …`; curl is its fallback path. Removing it breaks installs whenever wget fails.
+
 ## Publishing
 
-Pull requests build without pushing. Pushes to the default branch publish `latest` and a
-`YYYYMMDD` tag; other branches publish under their own branch name via `docker/metadata-action`,
-which is what keeps a branch build from overwriting `latest`. Preserve that separation when
-touching the workflow.
+Pull requests build without pushing. Every push that publishes tags the image both `:latest` and
+`:YYYYMMDD`, so `:latest` follows the newest build and the dated tags are the pin/rollback path.
+Note this is deliberate and branch-independent: a push to any listed branch moves `:latest`.
+
+Base image: `trixie` is Debian 13, current stable. Check
+[docker-library/official-images](https://github.com/docker-library/official-images/blob/master/library/debian)
+before bumping — the tag carrying `latest` there is the current stable.
 
 ## Branch layout
 
@@ -59,7 +73,7 @@ or rebase across the two.
 ## Documentation contract
 
 `entrypoint.sh` is the source of truth for the environment variables — keep the README's
-Configuration table, the README's compose snippet, and `compose.yaml` in agreement with it.
+Configuration table, the README's compose snippet, and `docker-compose.sample.yml` in agreement with it.
 
 ## Operational note
 
