@@ -3,6 +3,9 @@
 name: Image size report
 
 on:
+  push:
+    paths:
+      - '.github/workflows/size-report.yml'
   workflow_dispatch:
 
 jobs:
