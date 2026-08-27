@@ -1,10 +1,15 @@
-# The bare agent, with no diagnostics tools. Copy this file, fill in the two
+# The bare agent, with no diagnostics tools. Copy this file, fill in the three
 # values, and `docker compose up -d`.
 services:
   meshcentral-agent:
     container_name: meshcentral-agent
     image: ghcr.io/wus-technik/docker-meshcentral-agent:stable-slim
     restart: unless-stopped
+    # This is the name the device carries on the MeshCentral server. Set it,
+    # and then leave it alone: without it Docker invents a new random hostname
+    # every time the container is recreated, and the agent's next connect
+    # renames the device to match.
+    hostname: meshagent-site01
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
     environment:

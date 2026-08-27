@@ -54,6 +54,7 @@ services:
     container_name: meshcentral-agent
     image: ghcr.io/wus-technik/docker-meshcentral-agent:stable
     restart: unless-stopped
+    hostname: meshagent-site01   # The device's name on the server. Never change it.
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
     cap_add:
@@ -67,6 +68,11 @@ services:
 For the agent without the toolbox, copy
 [`docker-compose.slim.sample.yml`](docker-compose.slim.sample.yml) instead — the same file with
 `:stable-slim` and no `cap_add`.
+
+> [!IMPORTANT]
+> **Set `hostname:`, and then leave it alone.** It is the name the device carries on the
+> MeshCentral server, and Docker otherwise invents a fresh random one every time the container is
+> recreated — see [Naming](#naming) below.
 
 > [!TIP]
 > `:latest` follows every branch build. For a deployment you want `:stable`, which only moves when
@@ -116,6 +122,30 @@ able to start — the same check CI runs before publishing.
 | `MESH_GROUP_ID` | ID of the device group the agent should join, copied from the server's *Add Agent* dialog | ✅ |
 
 Nothing else is configurable, and nothing is written outside `/meshagent`.
+
+## Naming
+
+`hostname:` is the name the device shows up under. Docker generates a random one — the container's
+short ID — for any container that does not set it, and it is *new on every recreate*: a
+`docker compose up -d` after an image update is enough. The agent reports its hostname on each
+connect, and the server renames the device to match, so a deployment without `hostname:` wanders
+through a series of hex strings and writes a *changed computer name* entry to the event log each
+time.
+
+So set it, and then treat it as fixed:
+
+``` yaml
+hostname: meshagent-site01
+```
+
+> [!NOTE]
+> Renaming does **not** create a second device — the identity is the certificate in
+> `meshagent.db`, not the name (see [Persistence](#persistence)). A duplicate device comes from
+> losing that file, which is a different problem with a different fix. But a device whose name
+> changes under you is nearly as unhelpful as a duplicate, and this is the one-line cure.
+
+With `network_mode: host` the container uses the host's own hostname and `hostname:` is ignored,
+which is usually what you want there anyway.
 
 ## Persistence
 
