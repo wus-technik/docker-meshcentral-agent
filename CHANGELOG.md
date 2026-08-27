@@ -8,6 +8,17 @@ and what moved.
 Each entry names the image tags it published. `:stable` and `:latest` move; the dated and
 `sha-` tags never do, so those are what to pin and roll back to.
 
+## Unreleased
+
+Documentation only; the image is unchanged.
+
+### Changed
+
+- Both compose samples set `hostname:`, and the README gains a Naming section explaining that it
+  has to stay fixed. Without it Docker assigns a new random hostname on every recreate and
+  MeshCentral renames the device to match on the agent's next connect. This is distinct from losing
+  `meshagent.db`, which is what actually produces a *second* device.
+
 ## 20260827.1
 
 Published `:20260827.1`, `:stable`, `:20260827.1-slim`, `:stable-slim`.

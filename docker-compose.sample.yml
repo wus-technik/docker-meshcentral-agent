@@ -1,10 +1,15 @@
 # The probe: the agent plus the diagnostics kit. Copy this file, fill in the
-# two values, and `docker compose up -d`.
+# three values, and `docker compose up -d`.
 services:
   meshcentral-agent:
     container_name: meshcentral-agent
     image: ghcr.io/wus-technik/docker-meshcentral-agent:stable
     restart: unless-stopped
+    # This is the name the device carries on the MeshCentral server. Set it,
+    # and then leave it alone: without it Docker invents a new random hostname
+    # every time the container is recreated, and the agent's next connect
+    # renames the device to match.
+    hostname: meshagent-site01
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
     # ping works without this (Docker grants NET_RAW by default); tcpdump needs
@@ -14,7 +19,8 @@ services:
     # On the bridge, the probe sees the bridge. Uncomment to put it on the
     # host's own interfaces instead — that is what you want to look at the
     # site's VLANs, and it makes container_name and cap_add the only things
-    # below that still apply.
+    # below that still apply. Note the host's own hostname then wins over the
+    # `hostname:` above.
     # network_mode: host
     environment:
       MESH_SERVER_URL: "https://your-meshcentral-server.com"

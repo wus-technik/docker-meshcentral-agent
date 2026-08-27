@@ -149,6 +149,14 @@ reachable from a branch.
 Configuration table, the README's compose snippets, `docker-compose.sample.yml` and
 `docker-compose.slim.sample.yml` in agreement with it.
 
+Both samples set `hostname:`, and the README's Naming section explains why. This is deployment
+advice rather than image behaviour: the agent reports its hostname on every connect and MeshCentral
+renames the device to match (`meshagent.js`, the `computer name` change path), so a container
+without a fixed hostname is renamed to a fresh random string on every recreate. It does *not*
+produce a second device — the identity is the public-key fingerprint of the certificate in
+`meshagent.db`. Keep those two failure modes distinct in the docs; conflating them sends people to
+delete volumes that are fine.
+
 `tools-smoke.sh` is the source of truth for what the probe contains — keep the README's Variants
 table in agreement with it. Adding a package means touching the Dockerfile, `tools-smoke.sh` and
 that table together.
