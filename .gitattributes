@@ -1,0 +1,9 @@
+# Force LF in the working tree on every platform. Git normalises to LF in the
+# repository either way, but a Windows clone with core.autocrlf=true checks the
+# scripts out as CRLF, and `docker build` then bakes `#!/bin/sh\r` into the
+# image. The container dies at start with
+#
+#   exec /entrypoint.sh: no such file or directory
+#
+# which names the file it just failed to run and is thoroughly misleading.
+* text=auto eol=lf
