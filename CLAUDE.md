@@ -4,15 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-A single-purpose Docker image that runs a [MeshCentral](https://meshcentral.com/) agent in a
-container. There is no application source code; the deliverable is:
+A Docker image that runs a [MeshCentral](https://meshcentral.com/) agent in a container, built in
+two flavours from one Dockerfile: a **probe** carrying network diagnostics tools (the default, and
+what the unsuffixed tags point at) and a **slim** agent-only image (`-slim` tags). There is no
+application source code; the deliverable is:
 
-- `Dockerfile` — `debian:trixie-slim` plus `wget`/`curl`/`ca-certificates`, `WORKDIR /meshagent`,
-  `entrypoint.sh` as ENTRYPOINT.
-- `entrypoint.sh` — the entire runtime logic (see below).
-- `docker-compose.sample.yml` — the example deployment users copy; it and the README's snippet must
-  stay in sync.
-- `.github/workflows/docker-build.yml` — shellcheck, then build and push to GHCR.
+- `Dockerfile` — two targets. `slim` is `debian:trixie-slim` plus `wget`/`curl`/`ca-certificates`,
+  `WORKDIR /meshagent`, `entrypoint.sh` as ENTRYPOINT; `tools` builds on it and adds the
+  diagnostics packages. `tools` is last, so a bare `docker build .` produces the probe.
+- `entrypoint.sh` — the entire runtime logic (see below). Identical in both targets.
+- `tools-smoke.sh` — proves every tool in the `tools` target is present and can exec. Shipped in
+  the image (operators can run it) and run by CI before publishing.
+- `docker-compose.sample.yml` (probe) and `docker-compose.slim.sample.yml` (agent only) — the
+  example deployments users copy; they and the README's snippets must stay in sync.
+- `.github/workflows/docker-build.yml` — shellcheck, then a build matrix over both targets,
+  the tools smoke test, then push to GHCR.
+- `.gitattributes` — `* text=auto eol=lf`. Not cosmetic: with `core.autocrlf=true` a Windows clone
+  checks the scripts out as CRLF, `docker build` bakes `#!/bin/sh\r` into the image, and the
+  container dies with `exec /entrypoint.sh: no such file or directory`. Do not remove it.
 
 ## Runtime behaviour (entrypoint.sh)
 
@@ -46,29 +55,45 @@ bypassing the installer.
 
 ## Build, run, test
 
-No test suite or build system beyond Docker itself. Verify changes by building and running:
+No build system beyond Docker itself. Verify changes by building and running:
 
 ```sh
-docker build -t docker-meshcentral-agent .
+docker build -t docker-meshcentral-agent .                       # the probe (target: tools)
+docker build --target slim -t docker-meshcentral-agent:slim .    # the agent alone
+
 docker run --rm -v ./meshagent-data:/meshagent \
   -e MESH_SERVER_URL="https://your-meshcentral-server.com" \
   -e MESH_GROUP_ID="your-group-id" \
   docker-meshcentral-agent
+
+docker run --rm --entrypoint /tools-smoke.sh docker-meshcentral-agent
 ```
 
-`entrypoint.sh` is `#!/bin/sh` (POSIX, not bash) — CI runs `shellcheck --shell=sh entrypoint.sh`
-and fails the build before anything is pushed, so run it locally after editing.
+`entrypoint.sh` and `tools-smoke.sh` are `#!/bin/sh` (POSIX, not bash) — CI runs
+`shellcheck --shell=sh` on both and fails the build before anything is pushed, so run it locally
+after editing.
+
+There is no test suite for the agent path — it needs a real MeshCentral server. The tools *are*
+tested: `tools-smoke.sh` checks each binary with `command -v` and then execs it, failing only on
+126/127. Exit status is otherwise ignored, because several of these tools exit non-zero for
+`--version`. Add a `check` line whenever you add a package; that file is the list CI enforces.
 
 ## Image composition
 
-Two things about the Dockerfile that look like oversights but are not:
+Three things about the Dockerfile that look like oversights but are not:
 
-- **Multi-stage would not help**, measured on CI (2026-08-26, amd64): base `debian:trixie-slim`
-  75.0 MB, this image 98.6 MB, and a multi-stage variant copying only the binaries and their
-  libraries 93.4 MB — with both `wget` and `curl` failing to start for want of transitive
-  libraries. Nothing is compiled here and all three packages are runtime dependencies of the
-  first-start install, so a builder stage has nothing to discard. Do not re-open this without
-  new evidence.
+- **The multi-stage split is about purpose, not size.** `tools` builds *on* `slim` rather than
+  copying out of it, so nothing is discarded and both images share every layer of the agent. The
+  size-saving kind of multi-stage was measured and rejected (2026-08-26, amd64, `docker images`):
+  base `debian:trixie-slim` 75.0 MB, the agent image 98.6 MB, and a variant copying only the
+  binaries and their libraries 93.4 MB — with both `wget` and `curl` failing to start for want of
+  transitive libraries. Nothing is compiled here and all three packages are runtime dependencies of
+  the first-start install, so a builder stage has nothing to discard. Do not re-open that without
+  new evidence. Current sizes (2026-08-27, `du -sx` inside the container, so not comparable to the
+  figures above): `slim` 100 MB, `tools` 221 MB.
+- **`bind9-dnsutils`, not `dnsutils`.** In trixie `dnsutils` is a transitional package: apt
+  installs it happily and no `dig` appears. This class of failure is exactly what `tools-smoke.sh`
+  exists to catch, and it will catch the next one on a base bump.
 - **`curl` is not redundant with `wget`.** MeshCentral's `meshinstall-linux.sh` downloads with
   `wget … || curl …`; curl is its fallback path. Removing it breaks installs whenever wget fails.
 
@@ -76,16 +101,26 @@ Two things about the Dockerfile that look like oversights but are not:
 
 The workflow's `Resolve image tags` step decides both the tags and whether to push at all:
 
-| Event | Tags | Pushed |
-|---|---|---|
-| Git tag whose commit is an ancestor of `origin/main` | `:YYYYMMDD`, `:stable` | yes |
-| Push to any branch | `:sha-<12>`, `:latest` | yes |
-| Pull request | `:pr-<n>` | no |
-| Git tag *not* on `main` | `:<tag name>` | no, plus a `::warning::` |
+Every leg runs twice, once per matrix target, and the matrix `suffix` is appended to each tag:
+`''` for `tools`, `-slim` for `slim`. **The unsuffixed tags are the probe** — deployments follow
+`:stable` and get the tools.
 
-Two things that step depends on: `fetch-depth: 0` on the checkout (the ancestry test needs real
-history), and the multi-line `$GITHUB_OUTPUT` heredoc for `tags`. `:stable` must stay reachable
-only from the tag-on-main path — that is the whole point of the split.
+| Event | Tags (probe / slim) | Pushed |
+|---|---|---|
+| Git tag whose commit is an ancestor of `origin/main` | `:YYYYMMDD`, `:stable` / `:YYYYMMDD-slim`, `:stable-slim` | yes |
+| Push to any branch | `:sha-<12>`, `:latest` / `:sha-<12>-slim`, `:latest-slim` | yes |
+| Pull request | `:pr-<n>` / `:pr-<n>-slim` | no |
+| Git tag *not* on `main` | `:<tag name>` / `:<tag name>-slim` | no, plus a `::warning::` |
+
+Three things that step depends on: `fetch-depth: 0` on the checkout (the ancestry test needs real
+history), the multi-line `$GITHUB_OUTPUT` heredoc for `tags`, and `SUFFIX` reaching the script
+through `env:` rather than being interpolated mid-heredoc. `:stable` must stay reachable only from
+the tag-on-main path — that is the whole point of the split.
+
+Before the push step, the `tools` leg builds the probe with `load: true` and runs
+`tools-smoke.sh` in it. The push that follows is a cache hit on that build, so this costs a
+container run rather than a second build. The two legs use separate `cache-to` scopes so they do
+not evict each other.
 
 Every action is on a major that runs on **Node 24**, the runner default. Do not pin any back to a
 Node 20 major; the runner warns and will eventually refuse.
@@ -103,7 +138,12 @@ reachable from a branch.
 ## Documentation contract
 
 `entrypoint.sh` is the source of truth for the environment variables — keep the README's
-Configuration table, the README's compose snippet, and `docker-compose.sample.yml` in agreement with it.
+Configuration table, the README's compose snippets, `docker-compose.sample.yml` and
+`docker-compose.slim.sample.yml` in agreement with it.
+
+`tools-smoke.sh` is the source of truth for what the probe contains — keep the README's Variants
+table in agreement with it. Adding a package means touching the Dockerfile, `tools-smoke.sh` and
+that table together.
 
 ## Operational note
 
