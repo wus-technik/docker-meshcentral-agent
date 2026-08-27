@@ -7,9 +7,17 @@ set -e
 AGENT_DIR="/meshagent"
 AGENT_BIN="${AGENT_DIR}/meshagent"
 INSTALLER="${AGENT_DIR}/meshinstall.sh"
+# The device's identity on the server. The agent writes it beside itself on
+# first connect; losing it means the next start registers as a new device.
+AGENT_DB="${AGENT_DIR}/meshagent.db"
+AGENT_MSH="${AGENT_DIR}/meshagent.msh"
 
 log() {
     echo "[meshagent] $*"
+}
+
+warn() {
+    echo "[meshagent] WARNING: $*" >&2
 }
 
 fail() {
@@ -22,6 +30,11 @@ fail() {
 
 if [ -f "$AGENT_BIN" ]; then
     log "Agent already installed in ${AGENT_DIR}."
+
+    # The binary survived but the state beside it did not: the agent will come
+    # up as a brand new device rather than the one already on the server.
+    [ -f "$AGENT_MSH" ] || warn "${AGENT_MSH} is missing — the agent has no server settings and cannot connect."
+    [ -f "$AGENT_DB" ] || warn "${AGENT_DB} is missing — this container will register as a NEW device. If this repeats on every start, the agent is not keeping its identity in ${AGENT_DIR}."
 else
     log "No agent in ${AGENT_DIR} — installing from ${MESH_SERVER_URL}."
 

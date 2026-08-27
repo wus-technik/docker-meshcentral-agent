@@ -30,6 +30,20 @@ Install and upgrade semantics belong in this script; there is nowhere else for t
 failure path goes through `fail()` so the container dies with a cause rather than a stack of
 `set -e` silence.
 
+## State contract
+
+`/meshagent` holds everything: the binary, `meshagent.msh` (server URL and group) and
+`meshagent.db` — the node certificate, i.e. the device's identity on the server. The installer
+downloads into the working directory and the agent runs from there, which is what keeps state in
+the volume; do not change `WORKDIR`, and do not `cd` in `entrypoint.sh`, or the identity moves into
+the container layer and every recreate produces a duplicate device. Step 2's skip is keyed on the
+binary alone, so the script warns separately when `.msh` or `.db` is missing rather than
+re-registering in silence.
+
+Note MeshCentral's installer also runs `./meshagent -fullinstall`, which copies the agent to a
+system path and tries to register a service — both useless in a container. See the open issue on
+bypassing the installer.
+
 ## Build, run, test
 
 No test suite or build system beyond Docker itself. Verify changes by building and running:

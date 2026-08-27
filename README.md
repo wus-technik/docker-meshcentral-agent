@@ -74,6 +74,36 @@ services:
 
 Nothing else is configurable, and nothing is written outside `/meshagent`.
 
+## Persistence
+
+The volume is the whole of the container's state, and one file in it is the device's identity:
+
+| File in `/meshagent` | What it is | Lose it and… |
+|---|---|---|
+| `meshagent.db` | The node certificate — **the registration** | The agent comes back as a *new* device; the old one goes offline forever |
+| `meshagent.msh` | Server URL, device group, startup type | The agent has nothing to connect to |
+| `meshagent` | The agent binary | It is downloaded again on the next start |
+
+Back up `meshagent.db` and `meshagent.msh` together, and keep the volume across image updates:
+`docker compose pull && docker compose up -d` keeps the same device, because nothing in the
+volume is touched.
+
+> [!WARNING]
+> `MESH_GROUP_ID` is read **once**, at install. Changing it later does nothing — the agent stays in
+> the group recorded in `meshagent.msh`, because a start that finds an existing installation skips
+> the installer entirely. To move a device to another group, delete the volume and let it
+> re-register, then remove the stale device on the server.
+
+If the volume is ever partially lost, the container says so at startup rather than silently
+re-registering:
+
+```
+[meshagent] WARNING: /meshagent/meshagent.db is missing — this container will register as a NEW device.
+```
+
+Seeing that on *every* start means the agent is keeping its identity somewhere other than the
+volume — worth reporting, since it is what the volume exists to prevent.
+
 <details>
 <summary><b>What happens on the first start</b></summary>
 
