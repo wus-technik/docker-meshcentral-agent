@@ -10,9 +10,20 @@ Each entry names the image tags it published. `:stable` and `:latest` move; the 
 
 ## Unreleased
 
-Documentation only; the image is unchanged.
+### Added
+
+- `entrypoint.sh` records the container's MAC address in `/meshagent/.container-mac` and warns when
+  it differs from the previous start. The agent derives its NodeID from the MAC, so a MAC that
+  moves resets the identity *inside* a preserved `meshagent.db` — the volume survives and the
+  device still re-registers. The warning names the cause before the agent's own
+  `NodeID will reset, MAC Address Mismatch` line does.
 
 ### Changed
+
+- Both compose samples pin `mac_address`, and the README's Persistence section is now explicit that
+  a persistent volume and a fixed MAC are two separate prerequisites, either of which alone leaves
+  duplicate devices behind. Verified 2026-08-27: after pinning, the MAC change itself caused one
+  final reset and the next restart logged none.
 
 - Both compose samples set `hostname:`, and the README gains a Naming section explaining that it
   has to stay fixed. Without it Docker assigns a new random hostname on every recreate and

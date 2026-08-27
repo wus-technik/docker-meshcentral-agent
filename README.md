@@ -34,6 +34,7 @@ comes straight back up on every restart.
 |---|---|
 | 📦 **Nothing baked in** | The agent comes from **your** server's own installer, so it always matches the server it reports to |
 | 💾 **One volume** | `/meshagent` holds the installation — later starts find it and skip the download entirely |
+| 🧷 **Stable identity** | Pin `mac_address` and the device keeps its NodeID across restarts; the container warns if the MAC ever moves |
 | 🧾 **Two variables** | `MESH_SERVER_URL` and `MESH_GROUP_ID`; the container refuses to start without both, rather than half-installing |
 | 🧰 **A toolbox on site** | The probe adds ~25 network tools, so MeshCentral's remote terminal is somewhere you can actually diagnose from |
 | 🐧 **Small when you want it** | The `-slim` variant is `debian:trixie-slim` (Debian 13) plus `wget`, `curl` and `ca-certificates` — nothing else |
@@ -54,7 +55,8 @@ services:
     container_name: meshcentral-agent
     image: ghcr.io/wus-technik/docker-meshcentral-agent:stable
     restart: unless-stopped
-    hostname: meshagent-site01   # The device's name on the server. Never change it.
+    hostname: meshagent-site01         # The device's name on the server. Never change it.
+    mac_address: "02:57:53:03:01:01"   # Pins the NodeID. Unique per Docker network.
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
     cap_add:
@@ -73,6 +75,11 @@ For the agent without the toolbox, copy
 > **Set `hostname:`, and then leave it alone.** It is the name the device carries on the
 > MeshCentral server, and Docker otherwise invents a fresh random one every time the container is
 > recreated — see [Naming](#naming) below.
+
+> [!IMPORTANT]
+> **Set `mac_address:` too.** The agent derives its NodeID from the MAC, and Docker issues a new
+> one on every start, so without it the device re-registers after each restart — a persistent
+> volume does *not* prevent this. See [Persistence](#persistence).
 
 > [!TIP]
 > `:latest` follows every branch build. For a deployment you want `:stable`, which only moves when
@@ -140,14 +147,24 @@ hostname: meshagent-site01
 
 > [!NOTE]
 > Renaming does **not** create a second device — the identity is the certificate in
-> `meshagent.db`, not the name (see [Persistence](#persistence)). A duplicate device comes from
-> losing that file, which is a different problem with a different fix. But a device whose name
-> changes under you is nearly as unhelpful as a duplicate, and this is the one-line cure.
+> `meshagent.db`, not the name. Duplicates have two other causes, both covered under
+> [Persistence](#persistence): losing that file, or letting the MAC address change. Three
+> different failure modes, three different fixes; a device whose name changes under you is merely
+> unhelpful, and this is the one-line cure.
 
 With `network_mode: host` the container uses the host's own hostname and `hostname:` is ignored,
 which is usually what you want there anyway.
 
 ## Persistence
+
+Keeping one device on the server across restarts takes **two independent things**, and either one
+alone is not enough:
+
+1. **A persistent `/meshagent` volume** — otherwise the installation and its state are gone.
+2. **A pinned MAC address** — otherwise the agent discards its NodeID even though the volume
+   survived.
+
+### 1. The volume
 
 The volume is the whole of the container's state, and one file in it is the device's identity:
 
@@ -158,8 +175,8 @@ The volume is the whole of the container's state, and one file in it is the devi
 | `meshagent` | The agent binary | It is downloaded again on the next start |
 
 Back up `meshagent.db` and `meshagent.msh` together, and keep the volume across image updates:
-`docker compose pull && docker compose up -d` keeps the same device, because nothing in the
-volume is touched.
+`docker compose pull && docker compose up -d` leaves everything in the volume untouched. On its
+own that is still not enough — see the MAC address below.
 
 > [!WARNING]
 > `MESH_GROUP_ID` is read **once**, at install. Changing it later does nothing — the agent stays in
@@ -176,6 +193,57 @@ re-registering:
 
 Seeing that on *every* start means the agent is keeping its identity somewhere other than the
 volume — worth reporting, since it is what the volume exists to prevent.
+
+### 2. The MAC address
+
+Docker gives a container a **new MAC address on every start**, and the agent derives its NodeID
+from the MAC. It therefore resets the identity even when `meshagent.db` was preserved: the file
+survives, the NodeID inside it is overwritten. In `/meshagent/meshagent.log`:
+
+```
+[434BF98C5D4F394C] microstack/ILibParsers.c:10978 (0,0) NodeID will reset, MAC Address Mismatch:
+  [00:00:00:00:00:00][00:00:00:00:00:00][E2:1F:11:BB:DC:71] <==>
+  [00:00:00:00:00:00][00:00:00:00:00:00][D6:E8:89:03:4E:4A]
+```
+
+The device then appears on the server as a new one after every restart: history and group
+membership break off, and orphaned entries accumulate. Pin the MAC in the service definition:
+
+```yaml
+services:
+  meshcentral-agent:
+    image: ghcr.io/wus-technik/docker-meshcentral-agent:stable
+    mac_address: "02:57:53:03:01:01"
+    volumes:
+      - /var/docker-compose/meshcentral-agent301/meshagent:/meshagent
+```
+
+The scheme we use: `02` (locally administered) : `57:53` (ASCII `WS`) : site : instance. The
+address has to be unique within the Docker network.
+
+**The test that proves it.** Restart the container and read the log:
+
+```sh
+docker compose restart
+docker compose exec meshcentral-agent tail /meshagent/meshagent.log
+```
+
+No `NodeID will reset` line means it is sitting right. Introducing the pinned MAC is itself a
+change, so expect **one final reset** at that moment; it is the restart *after* that which has to
+come up clean.
+
+This is not a defect in this image — it is Docker's default meeting the agent's behaviour — but it
+hits everyone who deploys from the obvious compose example, so it belongs here. The container also
+says so itself when the MAC moves between starts:
+
+```
+[meshagent] WARNING: MAC address changed (…). The agent derives its NodeID from the MAC, so it
+will register as a NEW device even though /meshagent was kept. Pin the MAC in your deployment.
+```
+
+That check keeps the last address it saw in `/meshagent/.container-mac`. With
+`network_mode: host` the container has no interface of its own — it uses the host's, whose MAC is
+already stable — so `mac_address` does not apply there.
 
 <details>
 <summary><b>What happens on the first start</b></summary>

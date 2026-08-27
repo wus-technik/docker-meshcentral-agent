@@ -10,6 +10,12 @@ services:
     # every time the container is recreated, and the agent's next connect
     # renames the device to match.
     hostname: meshagent-site01
+    # Required. The agent derives its NodeID from the MAC address, and Docker
+    # hands out a fresh one on every start — without this the device
+    # re-registers after each restart and the old entry is orphaned. Scheme:
+    # 02 (locally administered) : 57:53 ("WS") : site : instance. Must be
+    # unique within the Docker network.
+    mac_address: "02:57:53:03:01:01"
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
     environment:

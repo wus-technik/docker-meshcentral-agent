@@ -51,6 +51,13 @@ the container layer and every recreate produces a duplicate device. Step 2's ski
 binary alone, so the script warns separately when `.msh` or `.db` is missing rather than
 re-registering in silence.
 
+The volume is only half the identity contract. The agent derives its NodeID from the container's
+MAC address, which Docker regenerates on every start, so it resets the NodeID *inside* a preserved
+`meshagent.db` — verified 2026-08-27 against the `NodeID will reset, MAC Address Mismatch` line in
+`/meshagent/meshagent.log`. Both compose samples therefore pin `mac_address`, and `check_mac()`
+records the address in `/meshagent/.container-mac` and warns when it moves. Persistence and a fixed
+MAC are two separate prerequisites; do not let the docs imply either one suffices.
+
 Note MeshCentral's installer also runs `./meshagent -fullinstall`, which copies the agent to a
 system path and tries to register a service — both useless in a container. See the open issue on
 bypassing the installer.
@@ -154,8 +161,16 @@ advice rather than image behaviour: the agent reports its hostname on every conn
 renames the device to match (`meshagent.js`, the `computer name` change path), so a container
 without a fixed hostname is renamed to a fresh random string on every recreate. It does *not*
 produce a second device — the identity is the public-key fingerprint of the certificate in
-`meshagent.db`. Keep those two failure modes distinct in the docs; conflating them sends people to
-delete volumes that are fine.
+`meshagent.db`.
+
+There are three distinct failure modes and the docs must keep them apart, because conflating them
+sends people to delete volumes that are fine:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Device keeps getting renamed | no fixed `hostname:` | set `hostname:` |
+| Duplicate device, volume was empty | volume not persisted | mount `/meshagent` |
+| Duplicate device, volume intact | MAC changes each start | set `mac_address:` |
 
 `tools-smoke.sh` is the source of truth for what the probe contains — keep the README's Variants
 table in agreement with it. Adding a package means touching the Dockerfile, `tools-smoke.sh` and
