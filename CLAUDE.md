@@ -24,6 +24,10 @@ application source code; the deliverable is:
 - `.gitattributes` — `* text=auto eol=lf`. Not cosmetic: with `core.autocrlf=true` a Windows clone
   checks the scripts out as CRLF, `docker build` bakes `#!/bin/sh\r` into the image, and the
   container dies with `exec /entrypoint.sh: no such file or directory`. Do not remove it.
+- `.dockerignore` — an allowlist: `*` followed by `!entrypoint.sh` and `!tools-smoke.sh`. The
+  Dockerfile COPYs those two files and nothing else, so anything else in the tree is context the
+  daemon does not need. If a third file ever has to reach the image, re-include it here in the same
+  commit that adds the COPY, or the build fails with a missing file.
 
 ## Runtime behaviour (entrypoint.sh)
 

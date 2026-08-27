@@ -30,6 +30,12 @@ Each entry names the image tags it published. `:stable` and `:latest` move; the 
   MeshCentral renames the device to match on the agent's next connect. This is distinct from losing
   `meshagent.db`, which is what actually produces a *second* device.
 
+- `.dockerignore` is now an allowlist — `*`, then the two files the Dockerfile actually COPYs —
+  instead of a list of things to leave out that had to be extended by hand and had already fallen
+  behind: `docker-compose.slim.sample.yml`, `.gitattributes` and `.dockerignore` itself were being
+  uploaded as build context. No effect on the published images; a COPY, not the context, decides
+  what they contain.
+
 ## 20260827.1
 
 Published `:20260827.1`, `:stable`, `:20260827.1-slim`, `:stable-slim`.
