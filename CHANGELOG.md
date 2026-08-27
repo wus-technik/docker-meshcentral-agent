@@ -59,8 +59,9 @@ alone, repin to `:stable-slim`.
 
 ## 20260827
 
-Published `:20260827`, `:stable`. Tagged `v1.0.0` — the only semantic version this project had,
-before the dated scheme above replaced it.
+Published `:20260827`, `:stable`. Cut as `v1.0.0`, the only semantic version this project ever
+had; that tag was retired when releases moved to dates, so this entry has no git tag of its own and
+the `:20260827` image is the artefact it left behind.
 
 First release of the rebuilt image.
 
