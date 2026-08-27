@@ -1,6 +1,15 @@
-.git
-.github
-*.md
-LICENSE
-docker-compose.sample.yml
-meshagent-data
+# The image is built from exactly two files — the Dockerfile COPYs
+# entrypoint.sh and tools-smoke.sh and nothing else — so this is an allowlist
+# rather than a list of things to leave out. A denylist has to be extended
+# every time a file is added at the top level, and it was already stale:
+# docker-compose.slim.sample.yml, .gitattributes and this file itself were all
+# being uploaded as build context. Ignoring everything and re-including the two
+# scripts keeps the context minimal by construction.
+#
+# Nothing here affects what ends up in the image (only a COPY can do that); it
+# affects what is uploaded to the daemon, and it keeps a stray file — an
+# operator's meshagent-data volume, an editor swap file, a .env — from being
+# sent along with the build.
+*
+!entrypoint.sh
+!tools-smoke.sh
