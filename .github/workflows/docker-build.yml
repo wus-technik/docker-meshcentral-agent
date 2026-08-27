@@ -41,9 +41,16 @@ jobs:
         run: shellcheck --shell=sh entrypoint.sh tools-smoke.sh
 
       # Two publishing shapes, each in a slim and a tools flavour:
-      #   a tag on main -> :YYYYMMDD + :stable   (the release path)
+      #   a tag on main -> :<tag> + :stable      (the release path)
       #   any branch    -> :sha-<commit> + :latest
       # Pull requests, and tags that are not on main, build without publishing.
+      #
+      # Release tags ARE the image tag, and they are dates: 20260827, or
+      # 20260827.1 for a second release the same day. Taking the name rather
+      # than `date +%Y%m%d` keeps the git tag and the image tag identical by
+      # construction — with the build date, re-running an old release's
+      # workflow would have stamped today onto last month's commit, and two
+      # releases in one day would have silently overwritten each other.
       - name: Resolve image tags
         id: tags
         env:
@@ -58,8 +65,16 @@ jobs:
           elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
             git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main || true
             if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main 2>/dev/null; then
+              case "$GITHUB_REF_NAME" in
+                [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+                [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].[0-9]*) ;;
+                *)
+                  echo "::error::Release tags on main are dates: YYYYMMDD, or YYYYMMDD.N for a second release the same day. Got '${GITHUB_REF_NAME}'."
+                  exit 1
+                  ;;
+              esac
               publish=true
-              tags="${image}:$(date +'%Y%m%d')${SUFFIX}
+              tags="${image}:${GITHUB_REF_NAME}${SUFFIX}
           ${image}:stable${SUFFIX}"
             else
               echo "::warning::Tag ${GITHUB_REF_NAME} is not on main — building it, but publishing nothing."
