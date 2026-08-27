@@ -19,6 +19,8 @@ application source code; the deliverable is:
   example deployments users copy; they and the README's snippets must stay in sync.
 - `.github/workflows/docker-build.yml` — shellcheck, then a build matrix over both targets,
   the tools smoke test, then push to GHCR.
+- `CHANGELOG.md` — one entry per dated release, naming the image tags it published. Add an entry
+  in the same commit that earns it, not at release time.
 - `.gitattributes` — `* text=auto eol=lf`. Not cosmetic: with `core.autocrlf=true` a Windows clone
   checks the scripts out as CRLF, `docker build` bakes `#!/bin/sh\r` into the image, and the
   container dies with `exec /entrypoint.sh: no such file or directory`. Do not remove it.
@@ -105,9 +107,15 @@ Every leg runs twice, once per matrix target, and the matrix `suffix` is appende
 `''` for `tools`, `-slim` for `slim`. **The unsuffixed tags are the probe** — deployments follow
 `:stable` and get the tools.
 
+Release tags are dates — `YYYYMMDD`, or `YYYYMMDD.N` for a second release the same day — and the
+image tag is `$GITHUB_REF_NAME` verbatim, not `date +%Y%m%d`. Those were previously independent,
+which meant re-running an old release's workflow stamped today onto an old commit, and two releases
+in one day silently overwrote each other. A tag on `main` in any other shape now fails the step
+with an `::error::` rather than publishing. No semantic versions: nothing here has an API to break.
+
 | Event | Tags (probe / slim) | Pushed |
 |---|---|---|
-| Git tag whose commit is an ancestor of `origin/main` | `:YYYYMMDD`, `:stable` / `:YYYYMMDD-slim`, `:stable-slim` | yes |
+| Git tag whose commit is an ancestor of `origin/main` | `:<tag>`, `:stable` / `:<tag>-slim`, `:stable-slim` | yes |
 | Push to any branch | `:sha-<12>`, `:latest` / `:sha-<12>-slim`, `:latest-slim` | yes |
 | Pull request | `:pr-<n>` / `:pr-<n>-slim` | no |
 | Git tag *not* on `main` | `:<tag name>` / `:<tag name>-slim` | no, plus a `::warning::` |
@@ -144,6 +152,9 @@ Configuration table, the README's compose snippets, `docker-compose.sample.yml` 
 `tools-smoke.sh` is the source of truth for what the probe contains — keep the README's Variants
 table in agreement with it. Adding a package means touching the Dockerfile, `tools-smoke.sh` and
 that table together.
+
+`CHANGELOG.md` is the source of truth for releases — keep the README's Releases table pointing at
+it rather than restating it.
 
 ## Operational note
 

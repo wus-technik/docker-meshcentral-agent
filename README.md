@@ -198,30 +198,39 @@ Publishing has two tracks, each in both flavours:
 
 | Trigger | Probe tags | Slim tags |
 |---|---|---|
-| Git tag on `main` | `:YYYYMMDD`, `:stable` | `:YYYYMMDD-slim`, `:stable-slim` |
+| Git tag on `main` | `:<tag>`, `:stable` | `:<tag>-slim`, `:stable-slim` |
 | Push to any branch | `:sha-<commit>`, `:latest` | `:sha-<commit>-slim`, `:latest-slim` |
 | Pull request, or a tag not on `main` | *(none — build only)* | *(none — build only)* |
 
+Release tags are **dates**, not versions: `20260827`, or `20260827.1` for a second release the same
+day. The image tag is the git tag, taken verbatim — a tag on `main` in any other shape fails the
+build rather than publishing under a name nobody expects.
+
 `:stable` is what deployments should follow; `:latest` is whatever built most recently. Each track
-leaves an immutable tag behind (`:YYYYMMDD`, `:sha-…`), so pinning and rolling back never depend on
-a moving tag:
+leaves an immutable tag behind (the dated tag, `:sha-…`), so pinning and rolling back never depend
+on a moving tag:
 
 ```sh
 docker pull ghcr.io/wus-technik/docker-meshcentral-agent:stable         # follow releases
 docker pull ghcr.io/wus-technik/docker-meshcentral-agent:stable-slim    # ...without the toolbox
-docker pull ghcr.io/wus-technik/docker-meshcentral-agent:20260827       # pin to one release
+docker pull ghcr.io/wus-technik/docker-meshcentral-agent:20260827.1     # pin to one release
 ```
 
 </details>
 
-## Versions
+## Releases
 
-- **v1.1** — two variants from one Dockerfile. The unsuffixed tags become a probe carrying ~25
-  network diagnostics tools; `-slim` keeps the original agent-only image unchanged. CI proves every
-  tool starts before publishing, and a second compose sample covers the slim shape.
-- **v1** — first release of the rebuilt image: Debian 13 (trixie) base, install-on-first-start
-  entrypoint with explicit failure messages, a `docker-compose.sample.yml` to copy, MIT licence,
-  and a build that lints the script before publishing.
+Dated, not numbered — see [CHANGELOG.md](CHANGELOG.md) for what each one moved.
+
+| Release | What changed |
+|---|---|
+| [`20260827.1`](CHANGELOG.md#202608271) | Two variants from one Dockerfile: the unsuffixed tags become the probe, `-slim` keeps the agent-only image. Release tags become dates. |
+| [`20260827`](CHANGELOG.md#20260827) | First release of the rebuilt image: Debian 13 base, install-on-first-start entrypoint with explicit failure messages, MIT licence. |
+
+> [!IMPORTANT]
+> `20260827.1` **changes what `:stable` means**. A deployment following it moves from the agent to
+> the probe on its next pull, and grows by about 120 MB. The device keeps its identity — both
+> variants share the volume contract — but if you want the agent alone, repin to `:stable-slim`.
 
 ---
 
