@@ -13,6 +13,10 @@ weekly rebuild refreshes `main`'s `sha-` tag — so pin by digest for a build th
 
 ### Security
 
+- The probe sample no longer adds `NET_ADMIN`; it is commented out as an explicit opt-in. Tested:
+  `tcpdump` in promiscuous mode, `arping` and `nmap -sS` all work with Docker's default `NET_RAW`.
+  `NET_ADMIN` only grants changing routes, interfaces and firewall — with `network_mode: host`, the
+  host's. Remove it from existing deployments unless you need exactly that.
 - `MESH_SERVER_URL` must be `https://`. The installer it serves runs as root, and over plain HTTP
   anyone on the path could replace it. **A deployment with an `http://` URL stops starting** —
   switch it to the server's HTTPS address.
