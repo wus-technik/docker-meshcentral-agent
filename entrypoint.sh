@@ -15,6 +15,9 @@ AGENT_MSH="${AGENT_DIR}/meshagent.msh"
 # changes between starts resets the identity even though meshagent.db survived.
 # Remember the MAC to catch that before the agent does.
 MAC_FILE="${AGENT_DIR}/.container-mac"
+# Written only once an install is verified complete. The binary alone is no
+# proof: a failed install leaves one behind, and starting from it would loop.
+INSTALLED_MARKER="${AGENT_DIR}/.installed"
 
 log() {
     echo "[meshagent] $*"
@@ -69,16 +72,43 @@ esac
 # installer as `//meshagents` and `https://host/`.
 MESH_SERVER_URL="${MESH_SERVER_URL%/}"
 
-if [ -f "$AGENT_BIN" ]; then
-    log "Agent already installed in ${AGENT_DIR}."
+# The binary and its settings are both in place and non-empty. This is checked
+# rather than trusting the installer's exit status: MeshCentral's installer
+# exits 0 even when its downloads fail, and `wget -O` has already created an
+# empty `meshagent` by then.
+agent_complete() {
+    [ -s "$AGENT_BIN" ] && [ -x "$AGENT_BIN" ] && [ -s "$AGENT_MSH" ]
+}
 
-    # The binary survived but the state beside it did not: the agent will come
-    # up as a brand new device rather than the one already on the server.
+# The state beside a kept binary is gone: the agent will come up as a brand new
+# device rather than the one already on the server.
+warn_missing_state() {
     [ -f "$AGENT_MSH" ] || warn "${AGENT_MSH} is missing — the agent has no server settings and cannot connect."
     [ -f "$AGENT_DB" ] || warn "${AGENT_DB} is missing — this container will register as a NEW device. If this repeats on every start, the agent is not keeping its identity in ${AGENT_DIR}."
+}
+
+if [ -f "$INSTALLED_MARKER" ] && [ -x "$AGENT_BIN" ]; then
+    log "Agent already installed in ${AGENT_DIR}."
+    warn_missing_state
+    check_mac
+elif [ ! -f "$INSTALLED_MARKER" ] && [ -f "$AGENT_DB" ] && agent_complete; then
+    # A volume from before the marker existed. The node certificate is there,
+    # so this agent has run and connected before: the install did finish.
+    log "Agent installed in ${AGENT_DIR} by an older image; marking the install complete."
+    touch "$INSTALLED_MARKER"
     check_mac
 else
-    log "No agent in ${AGENT_DIR} — installing from ${MESH_SERVER_URL}."
+    if [ -e "$AGENT_BIN" ]; then
+        warn "Found an incomplete installation in ${AGENT_DIR} (an earlier install was interrupted or failed) — installing again."
+    fi
+    log "Installing the agent from ${MESH_SERVER_URL}."
+    rm -f "$INSTALLED_MARKER"
+
+    # A reinstall must not cost the device its identity. Whatever the
+    # installer does to the directory, the node certificate goes back after.
+    if [ -f "$AGENT_DB" ]; then
+        cp -p "$AGENT_DB" "${AGENT_DB}.keep"
+    fi
 
     # Download beside the target and move into place only on success, so an
     # interrupted start never leaves a truncated installer behind.
@@ -98,9 +128,16 @@ else
         || fail "The installer failed. Check that MESH_GROUP_ID matches a device group on the server."
     rm -f "$INSTALLER"
 
-    [ -f "$AGENT_BIN" ] \
-        || fail "The installer finished but left no agent at ${AGENT_BIN}."
+    if [ -f "${AGENT_DB}.keep" ]; then
+        mv -f "${AGENT_DB}.keep" "$AGENT_DB"
+    fi
 
+    # No marker on failure, so the next start installs again instead of
+    # exec'ing a truncated binary forever under `restart: unless-stopped`.
+    agent_complete \
+        || fail "The installer finished but left no usable agent: ${AGENT_BIN} and ${AGENT_MSH} must both exist and be non-empty. Its output above names the download that failed."
+
+    touch "$INSTALLED_MARKER"
     log "Installed."
     check_mac
 fi
