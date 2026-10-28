@@ -18,15 +18,18 @@ services:
     mac_address: "02:57:53:03:01:01"
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
-    # ping works without this (Docker grants NET_RAW by default); tcpdump needs
-    # it to put an interface into promiscuous mode.
-    cap_add:
-      - NET_ADMIN
+    # No extra capabilities needed: Docker's default NET_RAW already covers
+    # ping, arping, nmap SYN scans and tcpdump in promiscuous mode (tested
+    # 2026-10-28). NET_ADMIN only adds the power to CHANGE the network —
+    # routes, addresses, interfaces, firewall — and with network_mode: host
+    # that is the host's network, handed to anyone who controls the agent.
+    # Add it only for a session that needs it, then take it out again.
+    # cap_add:
+    #   - NET_ADMIN
     # On the bridge, the probe sees the bridge. Uncomment to put it on the
     # host's own interfaces instead — that is what you want to look at the
-    # site's VLANs, and it makes container_name and cap_add the only things
-    # below that still apply. Note the host's own hostname then wins over the
-    # `hostname:` above.
+    # site's VLANs. The host's own hostname and MAC then win over `hostname:`
+    # and `mac_address:` above.
     # network_mode: host
     environment:
       MESH_SERVER_URL: "https://your-meshcentral-server.com"

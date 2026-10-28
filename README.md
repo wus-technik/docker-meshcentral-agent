@@ -59,9 +59,8 @@ services:
     mac_address: "02:57:53:03:01:01"   # Pins the NodeID. Unique per Docker network.
     volumes:
       - ./meshagent-data:/meshagent  # Keeps the agent installed across restarts
-    cap_add:
-      - NET_ADMIN        # tcpdump in promiscuous mode; ping works without it
-    # network_mode: host # To watch the site's own interfaces, not the bridge
+    # cap_add: [NET_ADMIN] # Only to CHANGE routes/interfaces; see the note below
+    # network_mode: host   # To watch the site's own interfaces, not the bridge
     environment:
       MESH_SERVER_URL: "https://your-meshcentral-server.com"
       MESH_GROUP_ID: "your-super-long-group-id"
@@ -69,7 +68,7 @@ services:
 
 For the agent without the toolbox, copy
 [`docker-compose.slim.sample.yml`](docker-compose.slim.sample.yml) instead — the same file with
-`:stable-slim` and no `cap_add`.
+`:stable-slim`.
 
 > [!IMPORTANT]
 > **Set `hostname:`, and then leave it alone.** It is the name the device carries on the
@@ -114,9 +113,15 @@ The tools, all reachable from MeshCentral's remote terminal:
 | **Reading output** | `jq`, `less`, `vi` |
 
 > [!NOTE]
-> `ping` needs no extra permissions — Docker grants `NET_RAW` by default. `tcpdump` needs
-> `cap_add: [NET_ADMIN]` to put an interface into promiscuous mode, and seeing the site's traffic
-> rather than the bridge's needs `network_mode: host`. Both are in the sample.
+> The probe needs no extra capabilities. Docker's default `NET_RAW` covers `ping`, `arping`,
+> `nmap -sS` and `tcpdump`, promiscuous mode included. Seeing the site's traffic rather than the
+> bridge's needs `network_mode: host`, which the sample has commented out.
+
+> [!WARNING]
+> `cap_add: [NET_ADMIN]` only adds the power to *change* the network: routes, addresses,
+> interfaces, firewall rules. Together with `network_mode: host` that is the host's network, and
+> anyone who controls the agent — a MeshCentral admin, or whoever compromises the server — gets it
+> too. Add it for the session that needs it and remove it afterwards.
 
 Run `/tools-smoke.sh` inside the container to have every tool report whether it is present and
 able to start — the same check CI runs before publishing.
