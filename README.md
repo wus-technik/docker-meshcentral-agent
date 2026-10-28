@@ -260,14 +260,17 @@ already stable — so `mac_address` does not apply there.
 1. **Check the contract.** A missing `MESH_SERVER_URL` or `MESH_GROUP_ID` stops the container with
    an error naming the variable — there is no partial install to clean up afterwards. A
    `MESH_SERVER_URL` that is not `https://` is refused the same way.
-2. **Look for an existing install.** If `/meshagent/meshagent` is there, everything below is
-   skipped. That is the only reason the volume matters: it turns the download into a one-off.
+2. **Look for an existing install.** If the volume holds a *completed* install, everything below is
+   skipped. That is the only reason the volume matters: it turns the download into a one-off. An
+   install that failed halfway is not mistaken for a complete one; the next start installs again
+   and keeps `meshagent.db`, the device's identity.
 3. **Fetch the installer** from `${MESH_SERVER_URL}/meshagents?script=1` over HTTPS only (redirects
    to plain HTTP are refused), writing to a `.part` file
    and moving it into place only once the download succeeds, so an interrupted start can't leave a
    truncated script behind.
-4. **Run it** with the server URL and group ID, then confirm a binary actually landed at
-   `/meshagent/meshagent` before going any further.
+4. **Run it** with the server URL and group ID, then confirm the agent and its settings actually
+   landed in `/meshagent` before marking the install complete — the installer reports success even
+   when its downloads fail.
 5. **Hand over.** `exec` replaces the shell with the agent, making it PID 1.
 
 Delete the volume to force a clean reinstall on the next start.

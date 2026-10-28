@@ -31,12 +31,17 @@ The agent binary is **not** in the image. It is installed at first container sta
 
 1. Require `MESH_SERVER_URL` and `MESH_GROUP_ID`; each missing one exits 1 with a message naming it.
    `MESH_SERVER_URL` must be `https://` (the installer runs as root) and loses a trailing slash.
-2. If `/meshagent/meshagent` exists, skip installation. This is why the deployment mounts a volume
-   at `/meshagent` — it makes the install a one-off and is the only state the image has.
+2. If `/meshagent/.installed` exists (and the binary with it), skip installation. This is why the
+   deployment mounts a volume at `/meshagent` — it makes the install a one-off and is the only state
+   the image has. A volume from an older image (binary, `.msh` and `.db`, no marker) gets the marker
+   and is not reinstalled. Anything else — including a leftover binary from a failed install — is
+   installed again, with `meshagent.db` copied aside first and put back afterwards.
 3. Otherwise download `${MESH_SERVER_URL}/meshagents?script=1` with `curl --proto =https
    --proto-redir =https` (not wget, which follows https→http redirects) to `meshinstall.sh.part`, move it
-   into place, run it with the server URL and group ID, remove it, and verify the agent binary
-   exists before continuing.
+   into place, run it with the server URL and group ID, and remove it. Then verify the binary and
+   `.msh` are non-empty and write the marker. Do not trust the installer's exit status: upstream's
+   `meshinstall-linux.sh` exits 0 when its downloads fail, after `wget -O` has already created an
+   empty `meshagent`.
 4. `exec "$AGENT_BIN"` so the agent is PID 1 and receives signals directly.
 
 Install and upgrade semantics belong in this script; there is nowhere else for them to go. Every
@@ -50,8 +55,8 @@ failure path goes through `fail()` so the container dies with a cause rather tha
 downloads into the working directory and the agent runs from there, which is what keeps state in
 the volume; do not change `WORKDIR`, and do not `cd` in `entrypoint.sh`, or the identity moves into
 the container layer and every recreate produces a duplicate device. Step 2's skip is keyed on the
-binary alone, so the script warns separately when `.msh` or `.db` is missing rather than
-re-registering in silence.
+`.installed` marker, which is written only after a verified install; once it is there, a missing
+`.msh` or `.db` produces a warning rather than a silent re-registration.
 
 The volume is only half the identity contract. The agent derives its NodeID from the container's
 MAC address, which Docker regenerates on every start, so it resets the NodeID *inside* a preserved

@@ -11,6 +11,15 @@ weekly rebuild refreshes `main`'s `sha-` tag — so pin by digest for a build th
 
 ## Unreleased
 
+### Fixed
+
+- A failed or interrupted install is no longer mistaken for a finished one. Upstream's installer
+  exits 0 even when its downloads fail and leaves an empty `meshagent` behind; the container then
+  skipped installation on every restart and never got an agent. `entrypoint.sh` now writes
+  `/meshagent/.installed` only after the binary and `meshagent.msh` are verified, installs again
+  otherwise, and keeps `meshagent.db` across the reinstall. Existing volumes that already hold
+  `meshagent.db` are adopted without reinstalling.
+
 ### Security
 
 - The probe sample no longer adds `NET_ADMIN`; it is commented out as an explicit opt-in. Tested:
