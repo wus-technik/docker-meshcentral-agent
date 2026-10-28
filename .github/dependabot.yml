@@ -1,0 +1,17 @@
+# Only the workflow's actions are tracked. The Dockerfile's base is the floating
+# codename tag `debian:trixie-slim`, which Dependabot neither bumps nor needs
+# to: every build resolves it afresh, and the next Debian release is a
+# deliberate change (see CLAUDE.md). Package freshness comes from rebuilding,
+# not from Dependabot — see the schedule in docker-build.yml.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci

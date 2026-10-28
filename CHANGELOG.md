@@ -5,10 +5,29 @@ on the same day — and the image carries that tag verbatim alongside `:stable`.
 version, because nothing here has an API to break; what matters about a release is when it was cut
 and what moved.
 
-Each entry names the image tags it published. `:stable` and `:latest` move; the dated and
-`sha-` tags never do, so those are what to pin and roll back to.
+Each entry names the image tags it published. `:stable` and `:latest` move; the dated and `sha-`
+tags are what to pin and roll back to. They are only rebuilt when their workflow runs again — the
+weekly rebuild refreshes `main`'s `sha-` tag — so pin by digest for a build that can never change.
 
 ## Unreleased
+
+### Security
+
+- `MESH_SERVER_URL` must be `https://`. The installer it serves runs as root, and over plain HTTP
+  anyone on the path could replace it. **A deployment with an `http://` URL stops starting** —
+  switch it to the server's HTTPS address.
+- The installer is downloaded with `curl --proto-redir =https` instead of `wget`, which silently
+  followed an `https://` → `http://` redirect. A trailing slash on `MESH_SERVER_URL` is now stripped.
+- The image runs `apt-get upgrade` at build time, so packages that come with the base image
+  (perl-base, gzip, libssl, …) are as current as the ones installed on top. The 20260827.1 images
+  carried fixed CRITICAL CVEs in perl-base and socat for this reason.
+- CI rebuilds `main` every Monday and moves `:latest`; the cached apt layers are invalidated by an
+  ISO-week build argument, so a rebuild cannot replay an old cache.
+- Release tags are matched in full (`YYYYMMDD` or `YYYYMMDD.N`). The old pattern accepted
+  `20261028.1-slim`, whose probe image would have overwritten the slim image of that name.
+- Workflow actions are pinned by commit SHA, the checkout no longer keeps the token in
+  `.git/config`, and runs on the same ref are serialised so `:latest` cannot land on an older
+  build. Dependabot now keeps the action pins current.
 
 ### Added
 
