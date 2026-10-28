@@ -14,9 +14,10 @@ on:
   schedule:
     - cron: '17 4 * * 1'
 
-permissions:
-  contents: read
-  packages: write  # Required to push to GHCR
+# Nothing by default; each job asks for what it needs. Only `publish` can
+# write to the registry, so linting, building and smoke-testing — and every
+# pull request — run with a read-only token.
+permissions: {}
 
 # Without this, two quick pushes to one branch can finish in reverse order and
 # leave :latest on the older build. Per ref rather than one global group: a
@@ -27,9 +28,99 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-push:
-    name: Build and Push (${{ matrix.target }})
+  # Decides once, for both targets, whether and where this run publishes.
+  #
+  #   channel   trigger                        tags (each also with -slim)
+  #   release   date tag on main               :<tag>, :stable
+  #   latest    push/schedule/dispatch on main :sha-<commit>, :latest
+  #   preview   push to any other branch       :sha-<commit>
+  #   none      pull request, tag not on main  nothing — build only
+  #
+  # Release tags ARE the image tag, and they are dates: 20260827, or
+  # 20260827.1 for a second release the same day. Taking the name rather than
+  # `date +%Y%m%d` keeps the git tag and the image tag identical by
+  # construction — with the build date, re-running an old release's workflow
+  # would have stamped today onto last month's commit, and two releases in one
+  # day would have silently overwritten each other.
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      names: ${{ steps.plan.outputs.names }}
+      apt_refresh: ${{ steps.plan.outputs.apt_refresh }}
+
+    steps:
+      # Every action here is on a major that runs on Node 24, the runner's
+      # default. Do not pin any of them back to a Node 20 major. They are
+      # pinned by commit SHA because `publish` holds a token that can replace
+      # the published images; Dependabot keeps the SHAs and comments current.
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # Needed to tell whether a tag sits on main
+          # The token is not needed after checkout: the repository is public,
+          # so the later `git fetch` works anonymously.
+          persist-credentials: false
+
+      - name: Lint shell scripts
+        run: shellcheck --shell=sh entrypoint.sh tools-smoke.sh
+
+      - name: Resolve channel and tags
+        id: plan
+        run: |
+          set -eu
+          channel=none
+          names=""
+          sha_tag="sha-$(git rev-parse --short=12 "$GITHUB_SHA")"
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            :
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main || true
+            if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main 2>/dev/null; then
+              # Anchored on both ends: a glob like `*.[0-9]*` also accepted
+              # `20261028.1-slim`, whose tools image would then overwrite the
+              # slim image of the same name.
+              if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eqx '[0-9]{8}(\.[0-9]+)?'; then
+                echo "::error::Release tags on main are dates: YYYYMMDD, or YYYYMMDD.N for a second release the same day. Got '${GITHUB_REF_NAME}'."
+                exit 1
+              fi
+              channel=release
+              names="${GITHUB_REF_NAME} stable"
+            else
+              echo "::warning::Tag ${GITHUB_REF_NAME} is not on main — building it, but publishing nothing."
+            fi
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            channel=latest
+            names="${sha_tag} latest"
+          else
+            # A branch build is published for testing under its commit only.
+            # :latest is main's; an unmerged branch must not move it.
+            channel=preview
+            names="${sha_tag}"
+          fi
+
+          # Changes once a week, which invalidates the cached apt layers so
+          # every build in a new week (the scheduled one at the latest) ships
+          # Debian's current security fixes instead of the cache's.
+          apt_refresh="$(date -u +%G-W%V)"
+
+          {
+            echo "channel=${channel}"
+            echo "names=${names}"
+            echo "apt_refresh=${apt_refresh}"
+          } >> "$GITHUB_OUTPUT"
+          echo "channel=${channel} names=${names} apt_refresh=${apt_refresh}"
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # Two images out of one Dockerfile. The unsuffixed tags are the probe,
     # because that is what deployments want; `-slim` is the bare agent.
@@ -43,125 +134,102 @@ jobs:
             suffix: '-slim'
 
     steps:
-      # Every action here is on a major that runs on Node 24, the runner's
-      # default. Do not pin any of them back to a Node 20 major. They are
-      # pinned by commit SHA because this job holds a token that can replace
-      # the published images; Dependabot keeps the SHAs and comments current.
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0  # Needed to tell whether a tag sits on main
-          # The token is not needed after checkout: the repository is public,
-          # so the later `git fetch` works anonymously.
           persist-credentials: false
-
-      - name: Lint shell scripts
-        run: shellcheck --shell=sh entrypoint.sh tools-smoke.sh
-
-      # Two publishing shapes, each in a slim and a tools flavour:
-      #   a tag on main -> :<tag> + :stable      (the release path)
-      #   any branch    -> :sha-<commit> + :latest
-      # Pull requests, and tags that are not on main, build without publishing.
-      #
-      # Release tags ARE the image tag, and they are dates: 20260827, or
-      # 20260827.1 for a second release the same day. Taking the name rather
-      # than `date +%Y%m%d` keeps the git tag and the image tag identical by
-      # construction — with the build date, re-running an old release's
-      # workflow would have stamped today onto last month's commit, and two
-      # releases in one day would have silently overwritten each other.
-      - name: Resolve image tags
-        id: tags
-        env:
-          SUFFIX: ${{ matrix.suffix }}
-        run: |
-          set -eu
-          image="ghcr.io/${GITHUB_REPOSITORY}"
-          publish=false
-
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            tags="${image}:pr-${{ github.event.pull_request.number }}${SUFFIX}"
-          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main || true
-            if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main 2>/dev/null; then
-              # Anchored on both ends: a glob like `*.[0-9]*` also accepted
-              # `20261028.1-slim`, whose tools image would then overwrite the
-              # slim image of the same name.
-              if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eqx '[0-9]{8}(\.[0-9]+)?'; then
-                echo "::error::Release tags on main are dates: YYYYMMDD, or YYYYMMDD.N for a second release the same day. Got '${GITHUB_REF_NAME}'."
-                exit 1
-              fi
-              publish=true
-              tags="${image}:${GITHUB_REF_NAME}${SUFFIX}
-          ${image}:stable${SUFFIX}"
-            else
-              echo "::warning::Tag ${GITHUB_REF_NAME} is not on main — building it, but publishing nothing."
-              tags="${image}:${GITHUB_REF_NAME}${SUFFIX}"
-            fi
-          else
-            publish=true
-            tags="${image}:sha-$(git rev-parse --short=12 "$GITHUB_SHA")${SUFFIX}
-          ${image}:latest${SUFFIX}"
-          fi
-
-          # Changes once a week, which invalidates the cached apt layers so
-          # every build in a new week (the scheduled one at the latest) ships
-          # Debian's current security fixes instead of the cache's.
-          apt_refresh="$(date -u +%G-W%V)"
-
-          {
-            echo "apt_refresh=${apt_refresh}"
-            echo "publish=${publish}"
-            echo "tags<<TAGS_EOF"
-            echo "$tags"
-            echo "TAGS_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "publish=${publish}"
-          echo "$tags"
 
       # build-push-action needs the docker-container driver for the GitHub
       # Actions cache; the default docker driver cannot export it.
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # Debian renames packages between releases, and a transitional package
-      # installs cleanly while leaving no binary behind. Build the probe into
-      # the local daemon and make every tool prove it starts, before anything
-      # reaches the registry. The push below is a cache hit on this build.
-      - name: Verify the tools image
-        if: matrix.target == 'tools'
+      # Builds into the local daemon and fills the cache that `publish` pushes
+      # from, so what gets published is a cache hit on what was tested here.
+      - name: Build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
-          build-args: APT_REFRESH=${{ steps.tags.outputs.apt_refresh }}
-          target: tools
+          build-args: APT_REFRESH=${{ needs.plan.outputs.apt_refresh }}
+          target: ${{ matrix.target }}
           load: true
           push: false
-          tags: meshcentral-agent-tools:verify
+          tags: meshcentral-agent:verify
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
+      # Debian renames packages between releases, and a transitional package
+      # installs cleanly while leaving no binary behind. Every tool has to
+      # prove it starts before anything reaches the registry.
       - name: Run the tools smoke test
         if: matrix.target == 'tools'
-        run: docker run --rm --entrypoint /tools-smoke.sh meshcentral-agent-tools:verify
+        run: docker run --rm --entrypoint /tools-smoke.sh meshcentral-agent:verify
+
+  # The only job that can write to GHCR. It runs in an environment named after
+  # the channel, so the repository settings can gate each one: `release` limited
+  # to date tags (and, if wanted, a required reviewer), `latest` to main.
+  publish:
+    name: Publish (${{ matrix.target }})
+    needs: [plan, build]
+    if: needs.plan.outputs.channel != 'none'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.plan.outputs.channel }}
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: tools
+            suffix: ''
+          - target: slim
+            suffix: '-slim'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compose image tags
+        id: tags
+        env:
+          NAMES: ${{ needs.plan.outputs.names }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          set -eu
+          image="ghcr.io/${GITHUB_REPOSITORY}"
+          {
+            echo "tags<<TAGS_EOF"
+            for name in $NAMES; do
+              echo "${image}:${name}${SUFFIX}"
+            done
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+          for name in $NAMES; do echo "${image}:${name}${SUFFIX}"; done
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GitHub Container Registry
-        if: steps.tags.outputs.publish == 'true'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # Same inputs as `build`, so every layer comes from its cache. Read-only
+      # on the cache: a publish never writes what a later build would reuse.
+      - name: Push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
-          build-args: APT_REFRESH=${{ steps.tags.outputs.apt_refresh }}
+          build-args: APT_REFRESH=${{ needs.plan.outputs.apt_refresh }}
           target: ${{ matrix.target }}
-          push: ${{ steps.tags.outputs.publish == 'true' }}
+          push: true
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
