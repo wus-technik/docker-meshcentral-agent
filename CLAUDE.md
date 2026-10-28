@@ -30,9 +30,11 @@ application source code; the deliverable is:
 The agent binary is **not** in the image. It is installed at first container start:
 
 1. Require `MESH_SERVER_URL` and `MESH_GROUP_ID`; each missing one exits 1 with a message naming it.
+   `MESH_SERVER_URL` must be `https://` (the installer runs as root) and loses a trailing slash.
 2. If `/meshagent/meshagent` exists, skip installation. This is why the deployment mounts a volume
    at `/meshagent` — it makes the install a one-off and is the only state the image has.
-3. Otherwise download `${MESH_SERVER_URL}/meshagents?script=1` to `meshinstall.sh.part`, move it
+3. Otherwise download `${MESH_SERVER_URL}/meshagents?script=1` with `curl --proto =https
+   --proto-redir =https` (not wget, which follows https→http redirects) to `meshinstall.sh.part`, move it
    into place, run it with the server URL and group ID, remove it, and verify the agent binary
    exists before continuing.
 4. `exec "$AGENT_BIN"` so the agent is PID 1 and receives signals directly.
@@ -124,6 +126,7 @@ with an `::error::` rather than publishing. No semantic versions: nothing here h
 |---|---|---|
 | Git tag whose commit is an ancestor of `origin/main` | `:<tag>`, `:stable` / `:<tag>-slim`, `:stable-slim` | yes |
 | Push to any branch | `:sha-<12>`, `:latest` / `:sha-<12>-slim`, `:latest-slim` | yes |
+| Weekly schedule (Mon 04:17 UTC, runs on `main`) | same as a branch push | yes |
 | Pull request | `:pr-<n>` / `:pr-<n>-slim` | no |
 | Git tag *not* on `main` | `:<tag name>` / `:<tag name>-slim` | no, plus a `::warning::` |
 
@@ -138,7 +141,15 @@ container run rather than a second build. The two legs use separate `cache-to` s
 not evict each other.
 
 Every action is on a major that runs on **Node 24**, the runner default. Do not pin any back to a
-Node 20 major; the runner warns and will eventually refuse.
+Node 20 major; the runner warns and will eventually refuse. Actions are pinned by full commit SHA
+with the version in a trailing comment, because the job's token can replace published images;
+`.github/dependabot.yml` updates the pins weekly. Keep both the SHA and the comment when editing.
+
+Package freshness comes from rebuilding, not from Dependabot. The `Resolve image tags` step emits
+the ISO week as `apt_refresh`, passed to both build steps as the `APT_REFRESH` build argument; a new
+week invalidates the cached apt layers, and the slim stage runs `apt-get upgrade` so base-image
+packages are refreshed too. Without that argument the GHA cache would replay old apt layers forever.
+The weekly schedule exists to make that happen even when nobody pushes.
 
 Base image: `trixie` is Debian 13, current stable. Check
 [docker-library/official-images](https://github.com/docker-library/official-images/blob/master/library/debian)

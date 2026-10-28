@@ -40,7 +40,7 @@ comes straight back up on every restart.
 | 🐧 **Small when you want it** | The `-slim` variant is `debian:trixie-slim` (Debian 13) plus `wget`, `curl` and `ca-certificates` — nothing else |
 | 🔁 **Clean signals** | The agent is `exec`'d as PID 1, so `docker stop` reaches it directly |
 | 🩹 **Fails loudly** | A bad URL, a bad group ID or an installer that produces no binary each stop the container with a message naming the cause |
-| 🏷️ **Two tracks** | `:stable` is cut from a git tag on `main`; `:latest` follows the newest branch build. Both leave an immutable tag behind |
+| 🏷️ **Two tracks** | `:stable` is cut from a git tag on `main`; `:latest` follows the newest branch build. Both leave a dated or `sha-` tag behind; pin by digest for a build that can never change |
 | 🔍 **Tools that are proven** | CI runs every tool in the image and fails the build if one is missing or cannot start — Debian renames packages, and a transitional package installs silently |
 
 ## Install
@@ -125,7 +125,7 @@ able to start — the same check CI runs before publishing.
 
 | Variable | Meaning | Required |
 |---|---|---|
-| `MESH_SERVER_URL` | Base URL of your MeshCentral server — both where the installer comes from and where the agent reports | ✅ |
+| `MESH_SERVER_URL` | Base URL of your MeshCentral server — both where the installer comes from and where the agent reports. Must be `https://`; the installer runs as root, so the container refuses plain HTTP | ✅ |
 | `MESH_GROUP_ID` | ID of the device group the agent should join, copied from the server's *Add Agent* dialog | ✅ |
 
 Nothing else is configurable, and nothing is written outside `/meshagent`.
@@ -253,10 +253,12 @@ already stable — so `mac_address` does not apply there.
 `entrypoint.sh` is the whole of it, in order:
 
 1. **Check the contract.** A missing `MESH_SERVER_URL` or `MESH_GROUP_ID` stops the container with
-   an error naming the variable — there is no partial install to clean up afterwards.
+   an error naming the variable — there is no partial install to clean up afterwards. A
+   `MESH_SERVER_URL` that is not `https://` is refused the same way.
 2. **Look for an existing install.** If `/meshagent/meshagent` is there, everything below is
    skipped. That is the only reason the volume matters: it turns the download into a one-off.
-3. **Fetch the installer** from `${MESH_SERVER_URL}/meshagents?script=1`, writing to a `.part` file
+3. **Fetch the installer** from `${MESH_SERVER_URL}/meshagents?script=1` over HTTPS only (redirects
+   to plain HTTP are refused), writing to a `.part` file
    and moving it into place only once the download succeeds, so an interrupted start can't leave a
    truncated script behind.
 4. **Run it** with the server URL and group ID, then confirm a binary actually landed at
@@ -298,6 +300,7 @@ Publishing has two tracks, each in both flavours:
 |---|---|---|
 | Git tag on `main` | `:<tag>`, `:stable` | `:<tag>-slim`, `:stable-slim` |
 | Push to any branch | `:sha-<commit>`, `:latest` | `:sha-<commit>-slim`, `:latest-slim` |
+| Weekly rebuild of `main` (Mondays) | `:sha-<commit>`, `:latest` | `:sha-<commit>-slim`, `:latest-slim` |
 | Pull request, or a tag not on `main` | *(none — build only)* | *(none — build only)* |
 
 Release tags are **dates**, not versions: `20260827`, or `20260827.1` for a second release the same
@@ -305,8 +308,13 @@ day. The image tag is the git tag, taken verbatim — a tag on `main` in any oth
 build rather than publishing under a name nobody expects.
 
 `:stable` is what deployments should follow; `:latest` is whatever built most recently. Each track
-leaves an immutable tag behind (the dated tag, `:sha-…`), so pinning and rolling back never depend
-on a moving tag:
+leaves a specific tag behind (the dated tag, `:sha-…`), so pinning and rolling back do not depend on
+a moving tag. Those tags are not frozen, though: the weekly rebuild refreshes `:sha-<commit>` of
+`main` with Debian's security fixes, and re-running a release's workflow rebuilds its dated tag. Pin
+by digest (`@sha256:…`) when you need a build that can never change.
+
+Debian's security fixes only reach the image through a rebuild. `:latest` gets one every week;
+`:stable` moves only when a release is cut, so cut one when the base needs it:
 
 ```sh
 docker pull ghcr.io/wus-technik/docker-meshcentral-agent:stable         # follow releases

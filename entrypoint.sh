@@ -60,6 +60,15 @@ check_mac() {
 [ -n "$MESH_SERVER_URL" ] || fail "MESH_SERVER_URL is not set."
 [ -n "$MESH_GROUP_ID" ] || fail "MESH_GROUP_ID is not set."
 
+# The installer runs as root. Over plain HTTP anyone on the path could swap it.
+case "$MESH_SERVER_URL" in
+    https://*) ;;
+    *) fail "MESH_SERVER_URL must start with https:// — the installer it serves runs as root." ;;
+esac
+# A trailing slash would otherwise reach both the download URL and the
+# installer as `//meshagents` and `https://host/`.
+MESH_SERVER_URL="${MESH_SERVER_URL%/}"
+
 if [ -f "$AGENT_BIN" ]; then
     log "Agent already installed in ${AGENT_DIR}."
 
@@ -73,7 +82,11 @@ else
 
     # Download beside the target and move into place only on success, so an
     # interrupted start never leaves a truncated installer behind.
-    if ! wget -O "${INSTALLER}.part" "${MESH_SERVER_URL}/meshagents?script=1"; then
+    # curl rather than wget: wget follows an https -> http redirect without a
+    # word, and --proto-redir is what closes that downgrade.
+    if ! curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' \
+            -o "${INSTALLER}.part" "${MESH_SERVER_URL}/meshagents?script=1"; then
         rm -f "${INSTALLER}.part"
         fail "Could not download the installer from ${MESH_SERVER_URL}. Is MESH_SERVER_URL correct and reachable?"
     fi

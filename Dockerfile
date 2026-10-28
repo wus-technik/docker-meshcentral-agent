@@ -27,9 +27,19 @@ LABEL org.opencontainers.image.title="MeshCentral Agent for Docker" \
       org.opencontainers.image.documentation="https://github.com/wus-technik/docker-meshcentral-agent/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT"
 
+# CI passes the ISO week here. A new value invalidates the cached apt layers in
+# both stages, so a rebuild picks up Debian's security fixes rather than
+# replaying last month's cache. Any value works for a local build.
+ARG APT_REFRESH=local
+
 # MeshCentral's installer downloads with `wget ... || curl ...`, so both are
-# required: curl is its fallback, not a duplicate.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# required: curl is its fallback, not a duplicate. The upgrade covers what the
+# base image ships (perl-base, gzip, libssl, ...), which `install` alone never
+# touches, so the image is current even between Debian's base image rebuilds.
+RUN echo "apt refresh: ${APT_REFRESH}" \
+    && apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         wget \
@@ -56,7 +66,11 @@ FROM slim AS tools
 LABEL org.opencontainers.image.title="MeshCentral Agent for Docker (tools)" \
       org.opencontainers.image.description="MeshCentral agent plus a network diagnostics kit, for use as an on-site probe."
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+ARG APT_REFRESH=local
+
+RUN echo "apt refresh: ${APT_REFRESH}" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
         bind9-dnsutils \
         bind9-host \
         ethtool \
