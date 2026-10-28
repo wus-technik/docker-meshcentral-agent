@@ -22,6 +22,12 @@ weekly rebuild refreshes `main`'s `sha-` tag — so pin by digest for a build th
 
 ### Security
 
+- `:latest` now follows `main` only. Other branches publish just `:sha-<commit>`; until now any
+  branch push moved `:latest`, and at the time of this change it pointed at an unmerged branch.
+- The workflow is split into `plan`, `build` and `publish`. Only `publish` holds `packages: write`,
+  so pull requests and the build itself run with a read-only token. `publish` runs in a GitHub
+  environment per channel (`release`, `latest`, `preview`), which the repository settings can
+  restrict to date tags and `main`.
 - The probe sample no longer adds `NET_ADMIN`; it is commented out as an explicit opt-in. Tested:
   `tcpdump` in promiscuous mode, `arping` and `nmap -sS` all work with Docker's default `NET_RAW`.
   `NET_ADMIN` only grants changing routes, interfaces and firewall — with `network_mode: host`, the

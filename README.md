@@ -40,7 +40,7 @@ comes straight back up on every restart.
 | 🐧 **Small when you want it** | The `-slim` variant is `debian:trixie-slim` (Debian 13) plus `wget`, `curl` and `ca-certificates` — nothing else |
 | 🔁 **Clean signals** | The agent is `exec`'d as PID 1, so `docker stop` reaches it directly |
 | 🩹 **Fails loudly** | A bad URL, a bad group ID or an installer that produces no binary each stop the container with a message naming the cause |
-| 🏷️ **Two tracks** | `:stable` is cut from a git tag on `main`; `:latest` follows the newest branch build. Both leave a dated or `sha-` tag behind; pin by digest for a build that can never change |
+| 🏷️ **Two tracks** | `:stable` is cut from a git tag on `main`; `:latest` follows `main`, rebuilt weekly. Both leave a dated or `sha-` tag behind; pin by digest for a build that can never change |
 | 🔍 **Tools that are proven** | CI runs every tool in the image and fails the build if one is missing or cannot start — Debian renames packages, and a transitional package installs silently |
 
 ## Install
@@ -81,7 +81,7 @@ For the agent without the toolbox, copy
 > volume does *not* prevent this. See [Persistence](#persistence).
 
 > [!TIP]
-> `:latest` follows every branch build. For a deployment you want `:stable`, which only moves when
+> `:latest` follows `main`. For a deployment you want `:stable`, which only moves when
 > a release is tagged on `main` — or a `:YYYYMMDD` tag to pin one exact image.
 
 > [!IMPORTANT]
@@ -307,15 +307,15 @@ Publishing has two tracks, each in both flavours:
 | Trigger | Probe tags | Slim tags |
 |---|---|---|
 | Git tag on `main` | `:<tag>`, `:stable` | `:<tag>-slim`, `:stable-slim` |
-| Push to any branch | `:sha-<commit>`, `:latest` | `:sha-<commit>-slim`, `:latest-slim` |
-| Weekly rebuild of `main` (Mondays) | `:sha-<commit>`, `:latest` | `:sha-<commit>-slim`, `:latest-slim` |
+| Push to `main`, and its weekly rebuild (Mondays) | `:sha-<commit>`, `:latest` | `:sha-<commit>-slim`, `:latest-slim` |
+| Push to any other branch | `:sha-<commit>` | `:sha-<commit>-slim` |
 | Pull request, or a tag not on `main` | *(none — build only)* | *(none — build only)* |
 
 Release tags are **dates**, not versions: `20260827`, or `20260827.1` for a second release the same
 day. The image tag is the git tag, taken verbatim — a tag on `main` in any other shape fails the
 build rather than publishing under a name nobody expects.
 
-`:stable` is what deployments should follow; `:latest` is whatever built most recently. Each track
+`:stable` is what deployments should follow; `:latest` is the newest build of `main`. Each track
 leaves a specific tag behind (the dated tag, `:sha-…`), so pinning and rolling back do not depend on
 a moving tag. Those tags are not frozen, though: the weekly rebuild refreshes `:sha-<commit>` of
 `main` with Debian's security fixes, and re-running a release's workflow rebuilds its dated tag. Pin

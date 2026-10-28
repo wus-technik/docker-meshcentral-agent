@@ -115,11 +115,18 @@ Three things about the Dockerfile that look like oversights but are not:
 
 ## Publishing
 
-The workflow's `Resolve image tags` step decides both the tags and whether to push at all:
+The workflow has three jobs, and only the last one can write to the registry:
 
-Every leg runs twice, once per matrix target, and the matrix `suffix` is appended to each tag:
-`''` for `tools`, `-slim` for `slim`. **The unsuffixed tags are the probe** — deployments follow
-`:stable` and get the tools.
+- `plan` (read-only) lints the scripts and decides the **channel** and the tag names, once for both
+  targets.
+- `build` (read-only, matrix) builds each target with `load: true`, runs `tools-smoke.sh` in the
+  probe, and fills the GHA cache.
+- `publish` (`packages: write`, matrix) runs only when the channel is not `none`, in the GitHub
+  environment of the same name, and pushes as a cache hit on `build`.
+
+Pull requests therefore never get a token that can write packages. `build` and `publish` run once per
+matrix target, and the matrix `suffix` is appended to each tag: `''` for `tools`, `-slim` for
+`slim`. **The unsuffixed tags are the probe** — deployments follow `:stable` and get the tools.
 
 Release tags are dates — `YYYYMMDD`, or `YYYYMMDD.N` for a second release the same day — and the
 image tag is `$GITHUB_REF_NAME` verbatim, not `date +%Y%m%d`. Those were previously independent,
@@ -127,30 +134,37 @@ which meant re-running an old release's workflow stamped today onto an old commi
 in one day silently overwrote each other. A tag on `main` in any other shape now fails the step
 with an `::error::` rather than publishing. No semantic versions: nothing here has an API to break.
 
-| Event | Tags (probe / slim) | Pushed |
+| Channel | Event | Tags (probe / slim) |
 |---|---|---|
-| Git tag whose commit is an ancestor of `origin/main` | `:<tag>`, `:stable` / `:<tag>-slim`, `:stable-slim` | yes |
-| Push to any branch | `:sha-<12>`, `:latest` / `:sha-<12>-slim`, `:latest-slim` | yes |
-| Weekly schedule (Mon 04:17 UTC, runs on `main`) | same as a branch push | yes |
-| Pull request | `:pr-<n>` / `:pr-<n>-slim` | no |
-| Git tag *not* on `main` | `:<tag name>` / `:<tag name>-slim` | no, plus a `::warning::` |
+| `release` | Date tag whose commit is an ancestor of `origin/main` | `:<tag>`, `:stable` / `:<tag>-slim`, `:stable-slim` |
+| `latest` | Push to `main`, weekly schedule (Mon 04:17 UTC), dispatch on `main` | `:sha-<12>`, `:latest` / `:sha-<12>-slim`, `:latest-slim` |
+| `preview` | Push to (or dispatch on) any other branch | `:sha-<12>` / `:sha-<12>-slim` |
+| `none` | Pull request; tag not on `main` (plus a `::warning::`) | nothing pushed |
 
-Three things that step depends on: `fetch-depth: 0` on the checkout (the ancestry test needs real
-history), the multi-line `$GITHUB_OUTPUT` heredoc for `tags`, and `SUFFIX` reaching the script
-through `env:` rather than being interpolated mid-heredoc. `:stable` must stay reachable only from
-the tag-on-main path — that is the whole point of the split.
+`plan` depends on `fetch-depth: 0` on its checkout (the ancestry test needs real history). Tag names
+travel to `publish` as a space-separated output and are expanded there with the suffix, which
+reaches the script through `env:` rather than being interpolated mid-script. `:stable` must stay
+reachable only from the `release` channel and `:latest` only from `latest` — an unmerged branch
+moving `:latest` is exactly what the `preview` channel exists to prevent.
 
-Before the push step, the `tools` leg builds the probe with `load: true` and runs
-`tools-smoke.sh` in it. The push that follows is a cache hit on that build, so this costs a
-container run rather than a second build. The two legs use separate `cache-to` scopes so they do
-not evict each other.
+`publish` rebuilds with the same inputs and only `cache-from`, so it is a cache hit on what `build`
+tested. If the cache was evicted in between it rebuilds from scratch within the same ISO week, so
+the result can differ only by a same-week Debian update. The two targets use separate cache scopes so
+they do not evict each other.
+
+The environments are where enforcement lives, and they are repository settings, not code:
+`release` should allow only tags matching the date pattern (and may require a reviewer), `latest`
+only `main`. GitHub creates a missing environment unprotected on first use. Note the limit: anyone
+who can push a branch can edit the workflow on it and drop the environment, so the environments
+gate the honest path; only a registry credential that the `GITHUB_TOKEN` does not hold would close
+that.
 
 Every action is on a major that runs on **Node 24**, the runner default. Do not pin any back to a
 Node 20 major; the runner warns and will eventually refuse. Actions are pinned by full commit SHA
-with the version in a trailing comment, because the job's token can replace published images;
+with the version in a trailing comment, because `publish`'s token can replace published images;
 `.github/dependabot.yml` updates the pins weekly. Keep both the SHA and the comment when editing.
 
-Package freshness comes from rebuilding, not from Dependabot. The `Resolve image tags` step emits
+Package freshness comes from rebuilding, not from Dependabot. `plan` emits
 the ISO week as `apt_refresh`, passed to both build steps as the `APT_REFRESH` build argument; a new
 week invalidates the cached apt layers, and the slim stage runs `apt-get upgrade` so base-image
 packages are refreshed too. Without that argument the GHA cache would replay old apt layers forever.
