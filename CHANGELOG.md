@@ -11,6 +11,22 @@ weekly rebuild refreshes `main`'s `sha-` tag — so pin by digest for a build th
 
 ## Unreleased
 
+### Changed
+
+- `.dockerignore` is now an allowlist — `*`, then the two files the Dockerfile actually COPYs —
+  instead of a list of things to leave out that had to be extended by hand and had already fallen
+  behind: `docker-compose.slim.sample.yml`, `.gitattributes` and `.dockerignore` itself were being
+  uploaded as build context. No effect on the published images; a COPY, not the context, decides
+  what they contain.
+
+## 20261028
+
+Published `:20261028`, `:stable`, `:20261028-slim`, `:stable-slim`.
+
+A security and maintenance release. The images are rebuilt on current Debian 13.7 packages; the
+20260827.1 images carried fixed CRITICAL CVEs. **A deployment with an `http://` `MESH_SERVER_URL`
+stops starting** — see Security below.
+
 ### Fixed
 
 - A failed or interrupted install is no longer mistaken for a finished one. Upstream's installer
@@ -67,12 +83,6 @@ weekly rebuild refreshes `main`'s `sha-` tag — so pin by digest for a build th
   has to stay fixed. Without it Docker assigns a new random hostname on every recreate and
   MeshCentral renames the device to match on the agent's next connect. This is distinct from losing
   `meshagent.db`, which is what actually produces a *second* device.
-
-- `.dockerignore` is now an allowlist — `*`, then the two files the Dockerfile actually COPYs —
-  instead of a list of things to leave out that had to be extended by hand and had already fallen
-  behind: `docker-compose.slim.sample.yml`, `.gitattributes` and `.dockerignore` itself were being
-  uploaded as build context. No effect on the published images; a COPY, not the context, decides
-  what they contain.
 
 ## 20260827.1
 
